@@ -31,49 +31,49 @@ export default function StockDetailPage() {
   return (
     <main className="max-w-7xl mx-auto px-4 py-6">
       <div className="space-y-6">
-        {/* Header */}
+        {/* Compact Header - 50% smaller */}
         <Card className="bg-card">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between mb-4">
+          <CardContent className="p-3">
+            <div className="flex items-center justify-between mb-2">
               <Link href="/">
-                <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
-                  <ArrowLeft className="w-4 h-4 mr-2" />
-                  Back to Search
+                <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground h-7 px-2">
+                  <ArrowLeft className="w-3 h-3 mr-1" />
+                  Back
                 </Button>
               </Link>
-              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary">
-                <Star className="w-4 h-4" />
+              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary h-7 px-2">
+                <Star className="w-3 h-3" />
               </Button>
             </div>
             
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-              <div>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+              <div className="min-w-0 flex-1">
                 {profile && (
                   <>
-                    <h1 className="text-3xl font-bold text-foreground">{profile.name}</h1>
-                    <p className="text-muted-foreground text-lg">{profile.exchange}: {symbol}</p>
+                    <h1 className="text-lg font-bold text-foreground truncate">{profile.name}</h1>
+                    <p className="text-muted-foreground text-sm">{profile.exchange}: {symbol}</p>
                   </>
                 )}
                 {!profile && !isLoading && (
                   <>
-                    <h1 className="text-3xl font-bold text-foreground">{symbol}</h1>
-                    <p className="text-muted-foreground text-lg">Stock Symbol</p>
+                    <h1 className="text-lg font-bold text-foreground">{symbol}</h1>
+                    <p className="text-muted-foreground text-sm">Stock Symbol</p>
                   </>
                 )}
               </div>
               
               {quote && (
-                <div className="text-right">
-                  <div className="text-3xl font-bold text-foreground">${quote.currentPrice.toFixed(2)}</div>
-                  <div className="flex items-center justify-end space-x-2">
-                    <span className={cn("text-lg font-medium", quote.change >= 0 ? "gain" : "loss")}>
+                <div className="text-right flex-shrink-0">
+                  <div className="text-xl font-bold text-foreground">${quote.currentPrice.toFixed(2)}</div>
+                  <div className="flex items-center justify-end space-x-1 text-sm">
+                    <span className={cn("font-medium", quote.change >= 0 ? "gain" : "loss")}>
                       {quote.change >= 0 ? "+" : ""}${quote.change.toFixed(2)}
                     </span>
-                    <span className={cn("text-lg font-medium", quote.changePercent >= 0 ? "gain" : "loss")}>
+                    <span className={cn("font-medium", quote.changePercent >= 0 ? "gain" : "loss")}>
                       ({quote.changePercent >= 0 ? "+" : ""}{quote.changePercent.toFixed(2)}%)
                     </span>
                   </div>
-                  <div className="text-xs text-muted-foreground mt-1">Real-time • USD</div>
+                  <div className="text-xs text-muted-foreground">Real-time • USD</div>
                 </div>
               )}
             </div>
