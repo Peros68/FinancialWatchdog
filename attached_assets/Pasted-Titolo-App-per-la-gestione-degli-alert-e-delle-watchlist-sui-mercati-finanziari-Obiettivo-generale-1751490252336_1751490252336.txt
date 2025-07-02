@@ -1,0 +1,69 @@
+Titolo: App per la gestione degli alert e delle watchlist sui mercati finanziari
+Obiettivo generale:
+Creare un’applicazione web/mobile “FinAlert” moderna per la gestione di titoli azionari e l’impostazione di alert grafici. L’interfaccia deve avere sfondo nero, essere chiara, reattiva e usabile anche su dispositivi mobili. L'app permette di cercare titoli, salvare watchlist personalizzate, visualizzare grafici interattivi e impostare alert visivi direttamente sul grafico.
+________________________________________
+1. Funzionalità di ricerca titoli
+L’utente dispone di una schermata dedicata alla ricerca titoli.
+Funzionalità previste:
+•	Campo di input in alto a sinistra per la digitazione del titolo o simbolo.
+•	La ricerca si attiva solo dopo l’inserimento di almeno due caratteri.
+•	È implementato un sistema di debounce di 500 millisecondi: la chiamata API viene effettuata solo dopo che l’utente ha smesso di digitare per almeno mezzo secondo, riducendo chiamate non necessarie.
+•	I risultati vengono aggiornati in tempo reale.
+•	Ogni risultato mostra:
+o	Nome completo del titolo (es. Amazon.com Inc.)
+o	Simbolo (es. AMZN)
+o	Tipo prodotto (es. Azione)
+o	Mercato di quotazione in forma abbreviata (es. NASDAQ, MIL, NYSE)
+•	Sulla destra di ogni elemento compare una stella: se cliccata apre un pannello che consente:
+o	Di aggiungere il titolo a una delle watchlist esistenti.
+o	Di creare una nuova watchlist.
+•	Se si clicca invece sull’elemento (ma non sulla stella), viene aperta la schermata di dettaglio del titolo con il grafico.
+________________________________________
+2. Integrazione API – Finnhub
+Il sistema utilizza le API di Finnhub.io per ottenere i risultati della ricerca.
+Sono utilizzati due endpoint:
+1.	/search: restituisce una lista parziale di titoli corrispondenti al testo ricercato.
+2.	/stock/profile2: per ogni titolo trovato, viene fatta una seconda chiamata per ottenere il nome del mercato (exchange), che viene poi abbreviato per la visualizzazione.
+⚠️ Nota: la lista restituita dalla ricerca può essere parziale, pertanto la scrematura locale di una cache potrebbe non restituire tutti i titoli realmente esistenti. Per questo motivo, è preferibile effettuare una chiamata remota ogni volta che l’utente modifica l’input (con debounce).
+Chiave API utilizzata nel progetto (in .env):
+plaintext
+CopiaModifica
+VITE_FINNHUB_API_KEY=d0obh91r01qu2361kgegd0obh91r01qu2361kgf0
+La chiave è importata tramite:
+js
+CopiaModifica
+const API_KEY = import.meta.env.VITE_FINNHUB_API_KEY;
+________________________________________
+3. Schermata dettaglio del titolo
+Al clic su un titolo nella lista, l’utente accede alla schermata di dettaglio.
+Contenuti della schermata:
+•	Header con il nome del titolo e simbolo.
+•	Nome del mercato (es. NASDAQ: AMZN)
+•	Prezzo attuale, variazione percentuale e assoluta, colorata in verde o rosso in base al trend.
+•	Grafico a candele o lineare.
+•	Selettore timeframe: 1D, 5D, 1M, 3M, 6M, 1Y, 5Y, ALL.
+•	Linea orizzontale gialla che rappresenta il prezzo corrente.
+•	Pulsanti per:
+o	Passare da grafico lineare a candele
+o	Visualizzare il grafico a tutto schermo
+o	Attivare alert sul grafico
+________________________________________
+4. Funzionalità alert grafici
+L’utente può impostare alert visivi tramite una linea interattiva:
+•	Cliccando sull’icona “alert” viene mostrata una linea orizzontale alla quota selezionata.
+•	La linea è trascinabile verticalmente e ha una etichetta con:
+o	Prezzo esatto
+o	Icona per modificarlo o rimuoverlo
+•	Pannello dedicato per gestire tutti gli alert attivi
+•	Dialog di conferma per evitare la creazione accidentale
+________________________________________
+Caratteristiche dell’interfaccia
+•	Sfondo nero per tutte le schermate
+•	Layout fluido, adattabile a mobile e desktop
+•	Navigazione semplice tra:
+o	Schermata di ricerca
+o	Watchlist
+o	Dettaglio titolo
+•	Prestazioni ottimizzate con uso di debounce
+•	Interfaccia pulita, minimalista, priva di elementi superflui
+
