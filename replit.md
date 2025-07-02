@@ -32,10 +32,10 @@ The application follows a full-stack architecture with clear separation between 
 - **Session Management**: Prepared for PostgreSQL session storage
 
 ### Data Storage Solutions
-- **Primary Database**: PostgreSQL for production data persistence
-- **Development Storage**: In-memory storage implementation for rapid development
+- **Primary Database**: PostgreSQL for persistent data storage (enabled)
 - **Schema Management**: Drizzle Kit for database migrations and schema synchronization
 - **Connection**: Neon serverless PostgreSQL driver for cloud database connectivity
+- **Storage Implementation**: DatabaseStorage class for PostgreSQL persistence
 
 ### Authentication and Authorization
 - **User Management**: Basic user schema with username/password authentication
@@ -100,6 +100,8 @@ The application follows a full-stack architecture with clear separation between 
 ```
 Changelog:
 - July 02, 2025. Initial setup
+- July 02, 2025. Configured PostgreSQL database for persistent watchlist storage
+- July 02, 2025. Enhanced chart interface with advanced toolbar, indicators, and timeframes
 ```
 
 ## User Preferences

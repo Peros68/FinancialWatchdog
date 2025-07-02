@@ -164,4 +164,104 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+import { db } from "./db";
+import { eq, and } from "drizzle-orm";
+
+export class DatabaseStorage implements IStorage {
+  async getUser(id: number): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user || undefined;
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user || undefined;
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values(insertUser)
+      .returning();
+    return user;
+  }
+
+  async getWatchlists(userId: number): Promise<Watchlist[]> {
+    return await db.select().from(watchlists).where(eq(watchlists.userId, userId));
+  }
+
+  async getWatchlist(id: number): Promise<Watchlist | undefined> {
+    const [watchlist] = await db.select().from(watchlists).where(eq(watchlists.id, id));
+    return watchlist || undefined;
+  }
+
+  async createWatchlist(insertWatchlist: InsertWatchlist): Promise<Watchlist> {
+    const [watchlist] = await db
+      .insert(watchlists)
+      .values(insertWatchlist)
+      .returning();
+    return watchlist;
+  }
+
+  async deleteWatchlist(id: number): Promise<void> {
+    await db.delete(watchlists).where(eq(watchlists.id, id));
+  }
+
+  async getWatchlistItems(watchlistId: number): Promise<WatchlistItem[]> {
+    return await db.select().from(watchlistItems).where(eq(watchlistItems.watchlistId, watchlistId));
+  }
+
+  async addWatchlistItem(insertItem: InsertWatchlistItem): Promise<WatchlistItem> {
+    const [item] = await db
+      .insert(watchlistItems)
+      .values(insertItem)
+      .returning();
+    return item;
+  }
+
+  async removeWatchlistItem(id: number): Promise<void> {
+    await db.delete(watchlistItems).where(eq(watchlistItems.id, id));
+  }
+
+  async getWatchlistItemBySymbol(watchlistId: number, symbol: string): Promise<WatchlistItem | undefined> {
+    const [item] = await db
+      .select()
+      .from(watchlistItems)
+      .where(and(eq(watchlistItems.watchlistId, watchlistId), eq(watchlistItems.symbol, symbol)));
+    return item || undefined;
+  }
+
+  async getAlerts(userId: number): Promise<Alert[]> {
+    return await db.select().from(alerts).where(eq(alerts.userId, userId));
+  }
+
+  async getAlertsBySymbol(userId: number, symbol: string): Promise<Alert[]> {
+    return await db
+      .select()
+      .from(alerts)
+      .where(and(eq(alerts.userId, userId), eq(alerts.symbol, symbol)));
+  }
+
+  async createAlert(insertAlert: InsertAlert): Promise<Alert> {
+    const [alert] = await db
+      .insert(alerts)
+      .values(insertAlert)
+      .returning();
+    return alert;
+  }
+
+  async updateAlert(id: number, updates: Partial<Alert>): Promise<Alert | undefined> {
+    const [alert] = await db
+      .update(alerts)
+      .set(updates)
+      .where(eq(alerts.id, id))
+      .returning();
+    return alert || undefined;
+  }
+
+  async deleteAlert(id: number): Promise<void> {
+    await db.delete(alerts).where(eq(alerts.id, id));
+  }
+}
+
+export const storage = new DatabaseStorage();
