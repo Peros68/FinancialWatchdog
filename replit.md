@@ -48,6 +48,11 @@ The application follows a full-stack architecture with clear separation between 
   - Real-time quotes and price data
   - Company profiles and market information
   - Historical chart data with multiple timeframes
+- **Alert Management**: FastAPI Backend Integration
+  - Alert management via https://borsa-alert.onrender.com
+  - Watchlist synchronization with external backend
+  - Chart data from Yahoo Finance API as fallback
+  - REST API endpoints for CRUD operations
 - **API Key Management**: Environment variable configuration with fallback defaults
 
 ## Data Flow
@@ -88,12 +93,13 @@ The application follows a full-stack architecture with clear separation between 
 
 ### Key Architectural Decisions
 
-1. **Dual Storage Implementation**: Provides flexibility for development (in-memory) and production (PostgreSQL) environments
+1. **Database Storage**: PostgreSQL implementation provides persistent data storage for watchlists and user data
 2. **API Abstraction**: Custom API client wrapper enables consistent error handling and request management
 3. **Component Architecture**: Modular UI components with clear separation of concerns
 4. **Dark Theme First**: CSS custom properties enable consistent theming across all components
 5. **Debounced Search**: 500ms debounce reduces API calls and improves user experience
 6. **Real-time Updates**: TanStack Query provides optimistic updates and cache management
+7. **Multi-API Integration**: Fallback system between FastAPI backend and Yahoo Finance for chart data
 
 ## Changelog
 
@@ -102,6 +108,7 @@ Changelog:
 - July 02, 2025. Initial setup
 - July 02, 2025. Configured PostgreSQL database for persistent watchlist storage
 - July 02, 2025. Enhanced chart interface with advanced toolbar, indicators, and timeframes
+- July 02, 2025. Added Alert management system with FastAPI backend integration
 ```
 
 ## User Preferences

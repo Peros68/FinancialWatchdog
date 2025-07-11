@@ -1,0 +1,124 @@
+itolo: Nuova sezione Alert con grafici da Yahoo Finance e integrazione backend
+
+Obiettivo:
+Implementare una nuova funzionalità nell'app chiamata "Alert", che consenta di:
+
+Visualizzare l’elenco degli alert attivi, ordinati per prossimità al target di prezzo (prima quelli più vicini).
+
+Cliccare su un titolo per aprire un grafico dettagliato dell’andamento del prezzo.
+
+Disegnare i grafici utilizzando i dati di Yahoo Finance.
+
+Integrare il tutto con un backend FastAPI già attivo all’indirizzo:
+https://borsa-alert.onrender.com
+
+Consentire il salvataggio e la rimozione dei titoli in watchlist, con sincronizzazione lato backend.
+
+Voce di menu "Alert":
+Aggiungere una nuova voce nel menu principale dell’app chiamata "Alert".
+Quando cliccata, deve mostrare un elenco dei titoli su cui sono attivi degli alert.
+
+Ogni riga deve mostrare:
+
+Ticker (es. AAPL, NVDA)
+
+Nome azienda
+
+Prezzo attuale (ottenuto da Yahoo Finance)
+
+Prezzo target (da backend)
+
+Distanza dal target (calcolata come: target - prezzo_attuale)
+
+L’elenco deve essere ordinato in modo decrescente, partendo dal titolo più vicino al target.
+
+Grafico dettagliato:
+Cliccando su un titolo dell’elenco, si apre una nuova schermata o componente che mostra un grafico con:
+
+Andamento degli ultimi 30 giorni (dati da Yahoo Finance o dal backend)
+
+Prezzo attuale
+
+Una linea orizzontale che rappresenta il target di prezzo impostato
+
+Librerie consigliate: Chart.js, lightweight-charts, oppure altre librerie grafiche compatibili con Flutter o React Native.
+
+Per ottenere i dati dal backend, usare:
+GET https://borsa-alert.onrender.com/grafico?ticker=AAPL
+
+In alternativa, si può usare direttamente l’API di Yahoo:
+https://query1.finance.yahoo.com/v8/finance/chart/AAPL
+
+Integrazione backend FastAPI:
+
+Endpoint da utilizzare:
+
+GET /alerts
+Ritorna tutti gli alert attivi, con target e prezzo attuale
+
+GET /grafico?ticker=XXX
+Ritorna i dati storici per costruire il grafico
+
+GET /watchlist
+Ritorna i ticker salvati dall’utente nella watchlist
+
+POST /watchlist
+Aggiunge un nuovo ticker alla watchlist. Richiede un JSON come:
+{ "ticker": "AAPL" }
+
+DELETE /watchlist
+Rimuove un ticker dalla watchlist. Richiede un JSON come:
+{ "ticker": "AAPL" }
+
+Esempio di risposta da /alerts:
+[
+{
+"ticker": "AAPL",
+"nome": "Apple Inc.",
+"target": 200,
+"prezzo_attuale": 190.5
+},
+{
+"ticker": "NVDA",
+"nome": "NVIDIA Corp.",
+"target": 130,
+"prezzo_attuale": 128.7
+}
+]
+
+Gestione della Watchlist:
+Ogni titolo visualizzato deve avere una stella cliccabile (vuota o piena).
+
+Se il titolo è già in watchlist, la stella è piena.
+
+Se non è in watchlist, la stella è vuota.
+
+Al clic sulla stella:
+
+se è presente, viene chiamato DELETE /watchlist
+
+se non è presente, viene chiamato POST /watchlist
+
+Tutti i salvataggi devono avvenire tramite il backend.
+
+Attualmente la gestione è globale (nessun login utente). In futuro sarà possibile estenderla con autenticazione.
+
+Sintesi operativa:
+
+Aggiungere voce "Alert" al menu
+
+Mostrare elenco ordinato per distanza target
+
+Visualizzare grafico con dati Yahoo o backend
+
+Integrare con backend FastAPI su https://borsa-alert.onrender.com
+
+Gestire aggiunta/rimozione dalla watchlist via API REST
+
+Fammi sapere se servono:
+
+esempi di chiamate HTTP da Flutter o React
+
+struttura JSON attesa per i grafici
+
+estensione futura per login e salvataggi utente personalizzati.
