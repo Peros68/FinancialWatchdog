@@ -18,6 +18,24 @@ async function fetchFromFinnhub(endpoint: string) {
 export async function registerRoutes(app: Express): Promise<Server> {
   const defaultUserId = 1; // Using default user for demo
 
+  // Yahoo Finance proxy for charts
+  app.get("/api/yahoo/chart/:symbol", async (req, res) => {
+    try {
+      const { symbol } = req.params;
+      const response = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1mo`);
+      
+      if (!response.ok) {
+        throw new Error(`Yahoo Finance API failed: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      console.error("Yahoo Finance proxy error:", error);
+      res.status(500).json({ error: "Failed to fetch chart data from Yahoo Finance" });
+    }
+  });
+
   // Stock search endpoint
   app.get("/api/stocks/search", async (req, res) => {
     try {

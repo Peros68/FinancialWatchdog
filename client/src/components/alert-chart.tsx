@@ -20,10 +20,9 @@ interface ChartData {
 }
 
 interface AlertInfo {
-  ticker: string;
-  nome: string;
+  symbol: string;
+  price: number;
   target: number;
-  prezzo_attuale: number;
 }
 
 interface AlertChartProps {
@@ -57,10 +56,10 @@ const fetchChartData = async (ticker: string): Promise<ChartData[]> => {
     console.warn('Backend unavailable, trying Yahoo Finance API...');
   }
 
-  // Fallback to Yahoo Finance API
+  // Fallback to Yahoo Finance API via proxy
   try {
-    const yahooResponse = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}`);
-    if (!yahooResponse.ok) throw new Error('Yahoo Finance API failed');
+    const yahooResponse = await fetch(`/api/yahoo/chart/${ticker}`);
+    if (!yahooResponse.ok) throw new Error('Yahoo Finance proxy failed');
     
     const yahooData = await yahooResponse.json();
     const result = yahooData.chart?.result?.[0];
@@ -84,10 +83,15 @@ const fetchChartData = async (ticker: string): Promise<ChartData[]> => {
 
 // Fetch alert info
 const fetchAlertInfo = async (ticker: string): Promise<AlertInfo | null> => {
-  const response = await fetch('https://borsa-alert.onrender.com/alerts');
-  if (!response.ok) return null;
-  const alerts = await response.json();
-  return alerts.find((alert: AlertInfo) => alert.ticker === ticker) || null;
+  try {
+    const response = await fetch('https://borsa-alert.onrender.com/alerts');
+    if (!response.ok) return null;
+    const alerts = await response.json();
+    return alerts.find((alert: AlertInfo) => alert.symbol === ticker) || null;
+  } catch (error) {
+    console.warn('Backend unavailable for alert info');
+    return null;
+  }
 };
 
 export default function AlertChart({ ticker }: AlertChartProps) {
@@ -134,7 +138,7 @@ export default function AlertChart({ ticker }: AlertChartProps) {
     );
   }
 
-  const currentPrice = alertInfo?.prezzo_attuale || chartData[chartData.length - 1]?.price || 0;
+  const currentPrice = alertInfo?.price || chartData[chartData.length - 1]?.price || 0;
   const targetPrice = alertInfo?.target || 0;
   const priceChange = chartData.length > 1 ? currentPrice - chartData[0].price : 0;
   const priceChangePercent = chartData.length > 1 ? (priceChange / chartData[0].price) * 100 : 0;
@@ -153,9 +157,7 @@ export default function AlertChart({ ticker }: AlertChartProps) {
               <CardTitle className="text-2xl text-foreground">
                 {ticker}
               </CardTitle>
-              {alertInfo && (
-                <p className="text-muted-foreground">{alertInfo.nome}</p>
-              )}
+              <p className="text-muted-foreground">{ticker} Stock</p>
             </div>
             <div className="text-right">
               <p className="text-3xl font-bold text-foreground">

@@ -7,10 +7,9 @@ import { useToast } from '@/hooks/use-toast';
 import AlertChart from '@/components/alert-chart';
 
 interface Alert {
-  ticker: string;
-  nome: string;
+  symbol: string;
+  price: number;
   target: number;
-  prezzo_attuale: number;
 }
 
 interface WatchlistItem {
@@ -113,8 +112,8 @@ export default function AlertsPage() {
   const sortedAlerts = alerts
     .map(alert => ({
       ...alert,
-      distanza: alert.target - alert.prezzo_attuale,
-      percentuale: ((alert.target - alert.prezzo_attuale) / alert.prezzo_attuale) * 100
+      distanza: alert.target - alert.price,
+      percentuale: ((alert.target - alert.price) / alert.price) * 100
     }))
     .sort((a, b) => Math.abs(a.distanza) - Math.abs(b.distanza));
 
@@ -122,11 +121,11 @@ export default function AlertsPage() {
     return watchlist.some(item => item.ticker === ticker);
   };
 
-  const toggleWatchlist = (ticker: string) => {
-    if (isInWatchlist(ticker)) {
-      removeMutation.mutate(ticker);
+  const toggleWatchlist = (symbol: string) => {
+    if (isInWatchlist(symbol)) {
+      removeMutation.mutate(symbol);
     } else {
-      addMutation.mutate(ticker);
+      addMutation.mutate(symbol);
     }
   };
 
@@ -205,9 +204,9 @@ export default function AlertsPage() {
       <div className="grid gap-4">
         {sortedAlerts.map((alert) => (
           <Card 
-            key={alert.ticker} 
+            key={alert.symbol} 
             className="bg-card border-border hover:bg-muted/50 transition-colors cursor-pointer"
-            onClick={() => setSelectedTicker(alert.ticker)}
+            onClick={() => setSelectedTicker(alert.symbol)}
           >
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
@@ -215,20 +214,20 @@ export default function AlertsPage() {
                   <div>
                     <div className="flex items-center space-x-2">
                       <h3 className="text-lg font-semibold text-foreground">
-                        {alert.ticker}
+                        {alert.symbol}
                       </h3>
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={(e) => {
                           e.stopPropagation();
-                          toggleWatchlist(alert.ticker);
+                          toggleWatchlist(alert.symbol);
                         }}
                         disabled={addMutation.isPending || removeMutation.isPending}
                       >
                         <Star 
                           className={`w-4 h-4 ${
-                            isInWatchlist(alert.ticker) 
+                            isInWatchlist(alert.symbol) 
                               ? 'fill-yellow-400 text-yellow-400' 
                               : 'text-muted-foreground'
                           }`} 
@@ -236,7 +235,7 @@ export default function AlertsPage() {
                       </Button>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      {alert.nome}
+                      {alert.symbol} Stock
                     </p>
                   </div>
                 </div>
@@ -245,7 +244,7 @@ export default function AlertsPage() {
                   <div className="text-right">
                     <p className="text-sm text-muted-foreground">Prezzo Attuale</p>
                     <p className="text-lg font-semibold text-foreground">
-                      ${alert.prezzo_attuale.toFixed(2)}
+                      ${alert.price.toFixed(2)}
                     </p>
                   </div>
 
