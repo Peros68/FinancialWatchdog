@@ -22,7 +22,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/yahoo/chart/:symbol", async (req, res) => {
     try {
       const { symbol } = req.params;
-      const response = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1mo`);
+      const { interval = '1d', range = '1mo' } = req.query;
+      const response = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${interval}&range=${range}`);
       
       if (!response.ok) {
         throw new Error(`Yahoo Finance API failed: ${response.status}`);

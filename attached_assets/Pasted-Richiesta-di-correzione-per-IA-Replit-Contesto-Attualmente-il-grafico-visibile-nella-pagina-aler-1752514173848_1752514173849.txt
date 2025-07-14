@@ -1,0 +1,75 @@
+Richiesta di correzione per IA Replit
+✅ Contesto:
+Attualmente il grafico visibile nella pagina /alerts non è corretto dal punto di vista visivo né funzionale. I dati di prezzo sono corretti (provenienti da Yahoo Finance) ma la rappresentazione è:
+
+Troppo "smussata", come una curva continua e non spigolosa.
+
+Manca una scala ben leggibile con livelli come 70, 75, 80...
+
+I pulsanti per cambiare da linea continua a "candlestick" non funzionano.
+
+Anche i pulsanti per cambiare timeframe (1m, 1h, D, M...) non rispondono.
+
+🔧 Obiettivo della correzione:
+Modificare il tipo di rappresentazione grafica in modo che la linea rispecchi fedelmente i valori giornalieri (una curva spigolosa, non continua).
+
+Mostrare una scala Y con valori ben leggibili (es. 70, 75, 80), proporzionata ai dati reali.
+
+Rendere funzionanti i pulsanti per cambiare tipo di grafico (Line, Candles) e timeframe (1m, D, M, ecc).
+
+Se possibile, integrare il supporto a candlestick (come nell'esempio TradingView), a partire dai dati open, high, low, close.
+
+🧩 Dati disponibili (JSON Yahoo Finance)
+Conferma che i dati provengono da Yahoo tramite API e sono strutturati come segue (esempio):
+
+json
+Copia
+Modifica
+{
+  "timestamp": [ ... ],
+  "indicators": {
+    "quote": [{
+      "open": [...],
+      "high": [...],
+      "low": [...],
+      "close": [...],
+      "volume": [...]
+    }]
+  }
+}
+🧪 Esempio API chiamata Yahoo
+bash
+Copia
+Modifica
+https://query1.finance.yahoo.com/v8/finance/chart/MRVL?interval=1d&range=1mo
+✅ Tecnologie usate:
+Presumibilmente si sta usando una libreria come Chart.js o Recharts. La richiesta è di:
+
+Usare Recharts o Lightweight Charts di TradingView (se già installata).
+
+Mantenere il tema nero attuale.
+
+Rispettare i pulsanti già presenti per:
+
+Linea / Candlestick
+
+Timeframe (1m, D, M...)
+
+🧭 Riferimenti visuali (Screenshots):
+📉 Attuale (sbagliato): curva troppo liscia, scala non leggibile.
+
+✅ Atteso (lineare spigolosa): grafico con segmenti netti tra i punti.
+
+✅ Atteso (candlestick): grafico stile TradingView con candele.
+
+🗂️ Checklist per IA Replit:
+ Analizza se la libreria attuale consente il tipo candlestick (altrimenti suggerire alternativa).
+
+ Verifica se le props per il grafico usano spline o monotone e cambiale in linear o step per linea spigolosa.
+
+ Aggiungi l'asse Y ben scalato in base ai dati.
+
+ Ripristina i pulsanti di tipo grafico e timeframe.
+
+ Mappa correttamente timestamp con i dati OHLC.
+

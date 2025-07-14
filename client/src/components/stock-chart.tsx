@@ -62,9 +62,26 @@ export default function StockChart({ symbol, currentPrice }: StockChartProps) {
   const [crosshairActive, setCrosshairActive] = useState(false);
 
   const { data: chartData, isLoading } = useQuery({
-    queryKey: [`/api/yahoo/chart/${symbol}`],
+    queryKey: [`/api/yahoo/chart/${symbol}`, selectedTimeframe],
     queryFn: async () => {
-      const response = await fetch(`/api/yahoo/chart/${symbol}`);
+      // Map timeframes to Yahoo Finance parameters
+      const getYahooParams = (timeframe: string) => {
+        switch (timeframe) {
+          case '1m': return { interval: '1m', range: '1d' };
+          case '5m': return { interval: '5m', range: '1d' };
+          case '15m': return { interval: '15m', range: '5d' };
+          case '30m': return { interval: '30m', range: '5d' };
+          case '1h': return { interval: '1h', range: '5d' };
+          case '4h': return { interval: '1h', range: '1mo' };
+          case '1D': return { interval: '1d', range: '1mo' };
+          case '1W': return { interval: '1wk', range: '3mo' };
+          case '1M': return { interval: '1mo', range: '1y' };
+          default: return { interval: '1d', range: '1mo' };
+        }
+      };
+      
+      const { interval, range } = getYahooParams(selectedTimeframe);
+      const response = await fetch(`/api/yahoo/chart/${symbol}?interval=${interval}&range=${range}`);
       if (!response.ok) throw new Error('Failed to fetch chart data');
       const data = await response.json();
       
@@ -328,9 +345,11 @@ export default function StockChart({ symbol, currentPrice }: StockChartProps) {
                     <YAxis 
                       stroke="var(--muted-foreground)"
                       fontSize={12}
-                      domain={['dataMin', 'dataMax']}
+                      domain={['dataMin - 1', 'dataMax + 1']}
                       axisLine={false}
                       orientation="right"
+                      tickFormatter={(value) => `$${value.toFixed(2)}`}
+                      tick={{ fontSize: 11 }}
                     />
                     <Tooltip 
                       contentStyle={{
@@ -343,7 +362,7 @@ export default function StockChart({ symbol, currentPrice }: StockChartProps) {
                       cursor={{ stroke: 'var(--muted-foreground)', strokeDasharray: '3 3' }}
                     />
                     <Line 
-                      type="monotone" 
+                      type="linear" 
                       dataKey="close" 
                       stroke="var(--primary)" 
                       strokeWidth={2}
@@ -384,9 +403,11 @@ export default function StockChart({ symbol, currentPrice }: StockChartProps) {
                     <YAxis 
                       stroke="var(--muted-foreground)"
                       fontSize={12}
-                      domain={['dataMin', 'dataMax']}
+                      domain={['dataMin - 1', 'dataMax + 1']}
                       axisLine={false}
                       orientation="right"
+                      tickFormatter={(value) => `$${value.toFixed(2)}`}
+                      tick={{ fontSize: 11 }}
                     />
                     <Tooltip 
                       contentStyle={{
@@ -400,8 +421,29 @@ export default function StockChart({ symbol, currentPrice }: StockChartProps) {
                       }}
                       cursor={{ stroke: 'var(--muted-foreground)', strokeDasharray: '3 3' }}
                     />
-                    {/* Candlestick bars using composed chart */}
-                    <Bar dataKey="close" fill="var(--gain)" />
+                    {/* High-Low wicks */}
+                    <Line 
+                      type="linear" 
+                      dataKey="high" 
+                      stroke="var(--muted-foreground)" 
+                      strokeWidth={1}
+                      dot={false}
+                      connectNulls={false}
+                    />
+                    <Line 
+                      type="linear" 
+                      dataKey="low" 
+                      stroke="var(--muted-foreground)" 
+                      strokeWidth={1}
+                      dot={false}
+                      connectNulls={false}
+                    />
+                    {/* OHLC bars as simplified candlesticks */}
+                    <Bar 
+                      dataKey="close" 
+                      fill="var(--primary)"
+                      radius={[1, 1, 1, 1]}
+                    />
                   </ComposedChart>
                 )}
               </ResponsiveContainer>
