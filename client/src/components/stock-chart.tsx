@@ -61,8 +61,36 @@ export default function StockChart({ symbol, currentPrice }: StockChartProps) {
   const [activeIndicators, setActiveIndicators] = useState<string[]>(["volume"]);
   const [crosshairActive, setCrosshairActive] = useState(false);
 
-  const { data: chartData, isLoading } = useQuery<{ data: ChartData[] }>({
-    queryKey: [`/api/stocks/chart/${symbol}?timeframe=${selectedTimeframe}`],
+  const { data: chartData, isLoading } = useQuery({
+    queryKey: [`/api/yahoo/chart/${symbol}`],
+    queryFn: async () => {
+      const response = await fetch(`/api/yahoo/chart/${symbol}`);
+      if (!response.ok) throw new Error('Failed to fetch chart data');
+      const data = await response.json();
+      
+      const result = data.chart?.result?.[0];
+      if (!result?.timestamp || !result?.indicators?.quote?.[0]?.close) {
+        throw new Error('Invalid chart data format');
+      }
+      
+      const timestamps = result.timestamp;
+      const closes = result.indicators.quote[0].close;
+      const opens = result.indicators.quote[0].open;
+      const highs = result.indicators.quote[0].high;
+      const lows = result.indicators.quote[0].low;
+      const volumes = result.indicators.quote[0].volume;
+      
+      return {
+        data: timestamps.map((timestamp: number, index: number) => ({
+          timestamp: timestamp * 1000,
+          open: opens[index] || 0,
+          high: highs[index] || 0,
+          low: lows[index] || 0,
+          close: closes[index] || 0,
+          volume: volumes[index] || 0
+        })).filter((item: any) => item.close > 0)
+      };
+    },
     enabled: !!symbol,
   });
 
