@@ -94,7 +94,12 @@ Finnhub + Yahoo proxy · porta 5000 (API + client serviti insieme).
   (Web Audio) al raggiungimento target. Logica trigger pura in `alertsApi.isAlertTriggered`.
   No triggered_at, no scheduler, no schema. Reversibile.
 - Chart toolbar (stock-chart): SEMPLIFICATA — rimossi mock RSI/MA, Save, Fullscreen, disegno.
-  Restano timeframe, Line/Candles, Volume reale, Alert.
+  Restano timeframe, toggle vista, Volume reale, Alert.
+- **Grafico corretto (2026-07-04):** candele OHLC REALI (Bar dataKey=[low,high] + shape custom
+  `Candle`, corpo open→close + stoppino high→low, verde/rosso); linea = `AreaChart` con gradiente;
+  **tasto UNICO** che alterna linea↔candele (mostra la vista di destinazione). Y-domain dai veri
+  high/low. Rimossa finta price-line a top:50%. Geometria pura in `client/src/lib/candles.ts`
+  (`computeCandleGeometry`) + `tests/candles.test.ts`. Esempi visivi in `Docs/img/`.
 - Watchlist: aggiunta ELIMINAZIONE watchlist (AlertDialog + DELETE /api/watchlists/:id). Rename TODO.
 - File legacy ELIMINATI (legacy.ts, legacyAlertApi.ts). D2 chiusa anche a livello sorgente.
 
