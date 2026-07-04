@@ -25,25 +25,28 @@ interface StockChartProps {
   currentPrice?: number;
 }
 
+// Quick period selectors (label shown on the toolbar buttons).
 const quickTimeframes = [
-  { label: "1m", value: "1m" },
-  { label: "30m", value: "30m" },
-  { label: "1h", value: "1h" },
-  { label: "D", value: "1D" },
-  { label: "W", value: "1W" },
-  { label: "M", value: "1M" },
+  { label: "15min", value: "15m" }, // 15 minuti
+  { label: "1g", value: "1D" }, // 1 giorno
+  { label: "1s", value: "1W" }, // 1 settimana
+  { label: "1m", value: "1Mo" }, // 1 mese
+  { label: "1a", value: "1Y" }, // 1 anno (default)
+  { label: "5A", value: "5Y" }, // 5 anni
 ];
 
+// Full list for the "more" dropdown; every value must resolve in getYahooParams.
 const allTimeframes = [
-  { label: "1 Minute", value: "1m" },
-  { label: "5 Minutes", value: "5m" },
-  { label: "15 Minutes", value: "15m" },
-  { label: "30 Minutes", value: "30m" },
-  { label: "1 Hour", value: "1h" },
-  { label: "4 Hours", value: "4h" },
-  { label: "Daily", value: "1D" },
-  { label: "Weekly", value: "1W" },
-  { label: "Monthly", value: "1M" },
+  { label: "1 Minuto", value: "1m" },
+  { label: "5 Minuti", value: "5m" },
+  { label: "15 Minuti", value: "15m" },
+  { label: "30 Minuti", value: "30m" },
+  { label: "1 Ora", value: "1h" },
+  { label: "1 Giorno", value: "1D" },
+  { label: "1 Settimana", value: "1W" },
+  { label: "1 Mese", value: "1Mo" },
+  { label: "1 Anno", value: "1Y" },
+  { label: "5 Anni", value: "5Y" },
 ];
 
 // Custom candlestick shape rendered inside a Recharts floating Bar (dataKey=[low, high]).
@@ -66,7 +69,7 @@ function Candle(props: any) {
 }
 
 export default function StockChart({ symbol, currentPrice }: StockChartProps) {
-  const [selectedTimeframe, setSelectedTimeframe] = useState("1D");
+  const [selectedTimeframe, setSelectedTimeframe] = useState("1Y");
   const [chartType, setChartType] = useState<"line" | "candlestick">("line");
   const [showAlertModal, setShowAlertModal] = useState(false);
   const [showVolume, setShowVolume] = useState(true);
@@ -79,14 +82,15 @@ export default function StockChart({ symbol, currentPrice }: StockChartProps) {
         switch (timeframe) {
           case '1m': return { interval: '1m', range: '1d' };
           case '5m': return { interval: '5m', range: '1d' };
-          case '15m': return { interval: '15m', range: '5d' };
+          case '15m': return { interval: '15m', range: '1d' };
           case '30m': return { interval: '30m', range: '5d' };
-          case '1h': return { interval: '1h', range: '5d' };
-          case '4h': return { interval: '1h', range: '1mo' };
-          case '1D': return { interval: '1d', range: '1mo' };
-          case '1W': return { interval: '1wk', range: '3mo' };
-          case '1M': return { interval: '1mo', range: '1y' };
-          default: return { interval: '1d', range: '1mo' };
+          case '1h': return { interval: '60m', range: '5d' };
+          case '1D': return { interval: '5m', range: '1d' };   // 1 giorno (intraday)
+          case '1W': return { interval: '60m', range: '5d' };  // 1 settimana
+          case '1Mo': return { interval: '1d', range: '1mo' }; // 1 mese
+          case '1Y': return { interval: '1d', range: '1y' };   // 1 anno
+          case '5Y': return { interval: '1wk', range: '5y' };  // 5 anni
+          default: return { interval: '1d', range: '1y' };
         }
       };
 

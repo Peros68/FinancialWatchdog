@@ -2,6 +2,18 @@
 
 Registro cronologico degli incrementi. Voce più recente in alto.
 
+## 2026-07-04 — Timeframe grafico: default 1 anno + scelte rapide 15min/1g/1s/1m/1a/5A
+
+**Tipo:** tweak frontend (`stock-chart.tsx`, no deps/schema).
+
+- **Default** della vista impostato a **1 anno** (`selectedTimeframe = "1Y"`).
+- Aggiunto **5 anni** (`5Y` → interval `1wk`, range `5y`).
+- **Scelte rapide** ridefinite: `15min · 1g · 1s · 1m · 1a · 5A`
+  (valori `15m / 1D / 1W / 1Mo / 1Y / 5Y`).
+- `getYahooParams` riscritto per i nuovi token (1g=intraday 5m/1d, 1s=60m/5d, 1m=1d/1mo,
+  1a=1d/1y, 5A=1wk/5y); dropdown "altro" allineato con etichette italiane + Anno/5 Anni.
+- Esito: `check` 0 · `lint` 0 · `test` 39/39 · `build` OK.
+
 ## 2026-07-04 — Correzione visualizzazione grafico (candele reali + area + toggle unico)
 
 **Tipo:** feature/bugfix frontend (no deps, no schema). Riferimento visivo: `Docs/img/`
