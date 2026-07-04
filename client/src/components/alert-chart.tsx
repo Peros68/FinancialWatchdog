@@ -10,7 +10,7 @@ import {
   YAxis, 
   CartesianGrid, 
   Tooltip, 
-  ReferenceLine 
+  ReferenceLine
 } from 'recharts';
 
 interface ChartData {
@@ -21,7 +21,7 @@ interface ChartData {
 
 interface AlertInfo {
   symbol: string;
-  price: number;
+  price?: number;
   target: number;
 }
 
@@ -29,45 +29,19 @@ interface AlertChartProps {
   ticker: string;
 }
 
-// Fetch chart data from backend or Yahoo Finance API
+// Fetch chart data from the local Yahoo Finance proxy
 const fetchChartData = async (ticker: string): Promise<ChartData[]> => {
-  try {
-    // Try backend first
-    const response = await fetch(`https://borsa-alert.onrender.com/grafico?ticker=${ticker}`, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-    });
-    
-    if (response.ok) {
-      const data = await response.json();
-      // Transform data if needed - expecting array of price points
-      if (Array.isArray(data)) {
-        return data.map((item: any, index: number) => ({
-          date: new Date(Date.now() - (29 - index) * 24 * 60 * 60 * 1000).toLocaleDateString(),
-          price: typeof item === 'number' ? item : item.price || item.close,
-          timestamp: Date.now() - (29 - index) * 24 * 60 * 60 * 1000
-        }));
-      }
-    }
-  } catch (error) {
-    console.warn('Backend unavailable, trying Yahoo Finance API...');
-  }
-
-  // Fallback to Yahoo Finance API via proxy
   try {
     const yahooResponse = await fetch(`/api/yahoo/chart/${ticker}`);
     if (!yahooResponse.ok) throw new Error('Yahoo Finance proxy failed');
-    
+
     const yahooData = await yahooResponse.json();
     const result = yahooData.chart?.result?.[0];
-    
+
     if (result?.timestamp && result?.indicators?.quote?.[0]?.close) {
       const timestamps = result.timestamp;
       const closes = result.indicators.quote[0].close;
-      
+
       return timestamps.map((timestamp: number, index: number) => ({
         date: new Date(timestamp * 1000).toLocaleDateString(),
         price: closes[index] || 0,
@@ -75,21 +49,23 @@ const fetchChartData = async (ticker: string): Promise<ChartData[]> => {
       })).filter((item: ChartData) => item.price > 0).slice(-30); // Last 30 data points
     }
   } catch (error) {
-    console.error('Yahoo Finance API also failed:', error);
+    console.error('Yahoo Finance API failed:', error);
   }
-  
-  throw new Error('Impossibile ottenere i dati del grafico da entrambe le fonti');
+
+  throw new Error('Impossibile ottenere i dati del grafico');
 };
 
-// Fetch alert info
+// Fetch alert info from the local backend (/api/alerts)
 const fetchAlertInfo = async (ticker: string): Promise<AlertInfo | null> => {
   try {
-    const response = await fetch('https://borsa-alert.onrender.com/alerts');
+    const response = await fetch('/api/alerts', { credentials: 'include' });
     if (!response.ok) return null;
     const alerts = await response.json();
-    return alerts.find((alert: AlertInfo) => alert.symbol === ticker) || null;
+    if (!Array.isArray(alerts)) return null;
+    const match = alerts.find((alert: any) => alert.symbol === ticker);
+    return match ? { symbol: match.symbol, target: match.targetPrice } : null;
   } catch (error) {
-    console.warn('Backend unavailable for alert info');
+    console.warn('Could not load alert info from local backend', error);
     return null;
   }
 };
@@ -262,9 +238,9 @@ export default function AlertChart({ ticker }: AlertChartProps) {
                     stroke="var(--chart-2)" 
                     strokeDasharray="5 5"
                     strokeWidth={2}
-                    label={{ 
-                      value: `Target: $${targetPrice.toFixed(2)}`, 
-                      position: 'topRight',
+                    label={{
+                      value: `Target: $${targetPrice.toFixed(2)}`,
+                      position: 'insideTopRight',
                       fill: 'var(--chart-2)'
                     }}
                   />

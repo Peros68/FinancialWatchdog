@@ -35,7 +35,7 @@ export default function AlertModal({ isOpen, onClose, symbol, currentPrice }: Al
       queryClient.invalidateQueries({ queryKey: [`/api/alerts/${symbol}`] });
       handleClose();
     },
-    onError: (error) => {
+    onError: () => {
       toast({
         title: "Error",
         description: "Failed to create alert. Please try again.",

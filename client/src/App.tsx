@@ -8,6 +8,7 @@ import SearchPage from "@/pages/search";
 import StockDetailPage from "@/pages/stock-detail";
 import WatchlistPage from "@/pages/watchlist";
 import AlertsPage from "@/pages/alerts";
+import SettingsPage from "@/pages/settings";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -19,6 +20,7 @@ function Router() {
         <Route path="/stock/:symbol" component={StockDetailPage} />
         <Route path="/watchlist" component={WatchlistPage} />
         <Route path="/alerts" component={AlertsPage} />
+        <Route path="/settings" component={SettingsPage} />
         <Route component={NotFound} />
       </Switch>
     </div>

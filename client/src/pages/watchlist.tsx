@@ -1,14 +1,34 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Star } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Plus, Trash2 } from "lucide-react";
 import { Link } from "wouter";
 import { Watchlist, WatchlistItem } from "@shared/schema";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
 export default function WatchlistPage() {
   const [activeWatchlist, setActiveWatchlist] = useState<number | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [newName, setNewName] = useState("");
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const { data: watchlists } = useQuery<Watchlist[]>({
     queryKey: ["/api/watchlists"],
@@ -19,12 +39,64 @@ export default function WatchlistPage() {
     enabled: activeWatchlist !== null,
   });
 
-  // Set first watchlist as active by default
-  if (watchlists && watchlists.length > 0 && activeWatchlist === null) {
-    setActiveWatchlist(watchlists[0].id);
-  }
+  // Set first watchlist as active by default (in an effect, not during render)
+  useEffect(() => {
+    if (watchlists && watchlists.length > 0 && activeWatchlist === null) {
+      setActiveWatchlist(watchlists[0].id);
+    }
+  }, [watchlists, activeWatchlist]);
 
   const activeWatchlistData = watchlists?.find(wl => wl.id === activeWatchlist);
+
+  const createMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const res = await apiRequest("POST", "/api/watchlists", { name });
+      return res.json() as Promise<Watchlist>;
+    },
+    onSuccess: (created) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/watchlists"] });
+      setShowCreate(false);
+      setNewName("");
+      setActiveWatchlist(created.id);
+      toast({ title: "Watchlist creata", description: `"${created.name}" è stata creata.` });
+    },
+    onError: () => {
+      toast({ title: "Errore", description: "Impossibile creare la watchlist.", variant: "destructive" });
+    },
+  });
+
+  const removeItemMutation = useMutation({
+    mutationFn: async (itemId: number) => {
+      await apiRequest("DELETE", `/api/watchlists/items/${itemId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/watchlists/${activeWatchlist}/items`] });
+      toast({ title: "Rimosso", description: "Titolo rimosso dalla watchlist." });
+    },
+    onError: () => {
+      toast({ title: "Errore", description: "Impossibile rimuovere il titolo.", variant: "destructive" });
+    },
+  });
+
+  const deleteWatchlistMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/watchlists/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/watchlists"] });
+      setActiveWatchlist(null); // effect re-selects the first remaining watchlist
+      toast({ title: "Watchlist eliminata" });
+    },
+    onError: () => {
+      toast({ title: "Errore", description: "Impossibile eliminare la watchlist.", variant: "destructive" });
+    },
+  });
+
+  const handleCreate = (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = newName.trim();
+    if (name) createMutation.mutate(name);
+  };
 
   return (
     <main className="max-w-7xl mx-auto px-4 py-6">
@@ -33,10 +105,45 @@ export default function WatchlistPage() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-semibold">My Watchlists</h2>
-              <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
-                <Plus className="w-4 h-4 mr-2" />
-                New Watchlist
-              </Button>
+              <div className="flex items-center gap-2">
+                {activeWatchlistData && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="text-muted-foreground hover:text-red-500"
+                        disabled={deleteWatchlistMutation.isPending}
+                      >
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Elimina
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Eliminare "{activeWatchlistData.name}"?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          La watchlist e tutti i titoli che contiene saranno eliminati. L'azione non è reversibile.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Annulla</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={() => deleteWatchlistMutation.mutate(activeWatchlistData.id)}
+                        >
+                          Elimina
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
+                <Button
+                  className="bg-primary text-primary-foreground hover:bg-primary/90"
+                  onClick={() => setShowCreate(true)}
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  New Watchlist
+                </Button>
+              </div>
             </div>
 
             {/* Watchlist Tabs */}
@@ -64,7 +171,12 @@ export default function WatchlistPage() {
             {watchlistItems && watchlistItems.length > 0 && (
               <div className="space-y-3">
                 {watchlistItems.map((item) => (
-                  <WatchlistItemCard key={item.id} item={item} />
+                  <WatchlistItemCard
+                    key={item.id}
+                    item={item}
+                    onRemove={() => removeItemMutation.mutate(item.id)}
+                    removing={removeItemMutation.isPending}
+                  />
                 ))}
               </div>
             )}
@@ -75,7 +187,7 @@ export default function WatchlistPage() {
               </div>
             )}
 
-            {!watchlists || watchlists.length === 0 && (
+            {(!watchlists || watchlists.length === 0) && (
               <div className="text-center py-8 text-muted-foreground">
                 <p>No watchlists found</p>
                 <p className="text-sm mt-2">Create your first watchlist to get started</p>
@@ -84,11 +196,54 @@ export default function WatchlistPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Create watchlist dialog */}
+      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nuova Watchlist</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleCreate} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="new-watchlist-name">Nome</Label>
+              <Input
+                id="new-watchlist-name"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="Es. Tech USA, Energia, Preferiti"
+                className="bg-background border-border"
+                required
+                autoFocus
+              />
+            </div>
+            <div className="flex space-x-3">
+              <Button type="button" variant="outline" className="flex-1" onClick={() => setShowCreate(false)}>
+                Annulla
+              </Button>
+              <Button
+                type="submit"
+                className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
+                disabled={createMutation.isPending || !newName.trim()}
+              >
+                {createMutation.isPending ? "Creazione..." : "Crea"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }
 
-function WatchlistItemCard({ item }: { item: WatchlistItem }) {
+function WatchlistItemCard({
+  item,
+  onRemove,
+  removing,
+}: {
+  item: WatchlistItem;
+  onRemove: () => void;
+  removing: boolean;
+}) {
   return (
     <Card className="bg-background border-border hover:border-muted-foreground transition-colors">
       <CardContent className="p-4">
@@ -99,17 +254,16 @@ function WatchlistItemCard({ item }: { item: WatchlistItem }) {
               <p className="text-sm text-muted-foreground">{item.symbol} • {item.exchange}</p>
             </div>
           </Link>
-          
-          <div className="text-right">
-            <div className="font-semibold text-foreground">--</div>
-            <div className="flex items-center space-x-1 text-sm text-muted-foreground">
-              <span>--</span>
-              <span>--</span>
-            </div>
-          </div>
-          
-          <Button variant="ghost" size="sm" className="ml-4 text-primary hover:text-primary/80">
-            <Star className="w-4 h-4 fill-current" />
+
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-4 text-muted-foreground hover:text-red-500"
+            onClick={onRemove}
+            disabled={removing}
+            aria-label={`Rimuovi ${item.symbol} dalla watchlist`}
+          >
+            <Trash2 className="w-4 h-4" />
           </Button>
         </div>
       </CardContent>

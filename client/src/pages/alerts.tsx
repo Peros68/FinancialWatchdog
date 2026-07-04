@@ -1,133 +1,71 @@
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useState, useEffect, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Star, TrendingUp, TrendingDown, Activity } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
+import { TrendingUp, TrendingDown, Activity } from 'lucide-react';
 import AlertChart from '@/components/alert-chart';
+import { fetchLocalAlerts, isAlertTriggered } from '@/lib/alertsApi';
+import { cn } from '@/lib/utils';
 
-interface Alert {
-  symbol: string;
-  price: number;
-  target: number;
-}
-
-interface WatchlistItem {
-  ticker: string;
-}
-
-// API calls to FastAPI backend
-const fetchAlerts = async (): Promise<Alert[]> => {
+// Simple beep via the Web Audio API (no extra dependency). Best-effort: some
+// browsers require a prior user interaction before audio can play.
+function playBeep() {
   try {
-    const response = await fetch('https://borsa-alert.onrender.com/alerts', {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    return await response.json();
-  } catch (error) {
-    console.error('Error fetching alerts:', error);
-    throw new Error('Impossibile connettersi al server degli alert. Verificare che il backend FastAPI sia attivo.');
+    const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.2);
+    osc.onended = () => ctx.close();
+  } catch {
+    // ignore audio errors (autoplay policy, unsupported browser, etc.)
   }
-};
-
-const fetchWatchlist = async (): Promise<WatchlistItem[]> => {
-  try {
-    const response = await fetch('https://borsa-alert.onrender.com/watchlist', {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    return await response.json();
-  } catch (error) {
-    console.error('Error fetching watchlist:', error);
-    throw new Error('Impossibile connettersi al server della watchlist.');
-  }
-};
-
-const addToWatchlist = async (ticker: string): Promise<void> => {
-  const response = await fetch('https://borsa-alert.onrender.com/watchlist', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ticker })
-  });
-  if (!response.ok) throw new Error('Failed to add to watchlist');
-};
-
-const removeFromWatchlist = async (ticker: string): Promise<void> => {
-  const response = await fetch('https://borsa-alert.onrender.com/watchlist', {
-    method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ticker })
-  });
-  if (!response.ok) throw new Error('Failed to remove from watchlist');
-};
+}
 
 export default function AlertsPage() {
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
 
-  // Fetch alerts and watchlist
-  const { data: alerts = [], isLoading: alertsLoading, error: alertsError } = useQuery({
-    queryKey: ['alerts'],
-    queryFn: fetchAlerts,
+  // Alerts come from the LOCAL backend (/api/alerts). The same query key is
+  // invalidated by AlertModal on creation, so new alerts appear here immediately.
+  const { data: alerts = [], isLoading: alertsLoading, error: alertsError, refetch } = useQuery({
+    queryKey: ['/api/alerts'],
+    queryFn: fetchLocalAlerts,
+    refetchInterval: 30000, // v1 active monitoring: re-poll quotes every 30s
   });
 
-  const { data: watchlist = [], error: watchlistError } = useQuery({
-    queryKey: ['watchlist'],
-    queryFn: fetchWatchlist,
-  });
-
-  // Mutations for watchlist operations
-  const addMutation = useMutation({
-    mutationFn: addToWatchlist,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['watchlist'] });
-      toast({ title: "Aggiunto alla watchlist", description: "Il titolo è stato salvato." });
-    },
-    onError: () => {
-      toast({ title: "Errore", description: "Impossibile aggiungere alla watchlist.", variant: "destructive" });
-    }
-  });
-
-  const removeMutation = useMutation({
-    mutationFn: removeFromWatchlist,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['watchlist'] });
-      toast({ title: "Rimosso dalla watchlist", description: "Il titolo è stato rimosso." });
-    },
-    onError: () => {
-      toast({ title: "Errore", description: "Impossibile rimuovere dalla watchlist.", variant: "destructive" });
-    }
-  });
-
-  // Calculate distance to target and sort alerts
+  // Calculate distance to target and sort alerts (price may be unavailable -> null)
   const sortedAlerts = alerts
-    .map(alert => ({
-      ...alert,
-      distanza: alert.target - alert.price,
-      percentuale: ((alert.target - alert.price) / alert.price) * 100
-    }))
-    .sort((a, b) => Math.abs(a.distanza) - Math.abs(b.distanza));
+    .map(alert => {
+      const distanza = alert.price != null ? alert.target - alert.price : null;
+      const percentuale =
+        alert.price != null && alert.price !== 0
+          ? ((alert.target - alert.price) / alert.price) * 100
+          : null;
+      return { ...alert, distanza, percentuale, triggered: isAlertTriggered(alert) };
+    })
+    .sort((a, b) => {
+      if (a.distanza == null) return 1;
+      if (b.distanza == null) return -1;
+      return Math.abs(a.distanza) - Math.abs(b.distanza);
+    });
 
-  const isInWatchlist = (ticker: string) => {
-    return watchlist.some(item => item.ticker === ticker);
-  };
-
-  const toggleWatchlist = (symbol: string) => {
-    if (isInWatchlist(symbol)) {
-      removeMutation.mutate(symbol);
-    } else {
-      addMutation.mutate(symbol);
-    }
-  };
+  // Active monitoring (v1): play a beep once when an alert newly reaches its target.
+  const triggeredSymbols = sortedAlerts.filter(a => a.triggered).map(a => a.symbol);
+  const triggeredKey = triggeredSymbols.join('|');
+  const prevTriggeredRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const prev = prevTriggeredRef.current;
+    const hasNew = triggeredSymbols.some(s => !prev.has(s));
+    if (hasNew) playBeep();
+    prevTriggeredRef.current = new Set(triggeredSymbols);
+  }, [triggeredKey]);
 
   if (selectedTicker) {
     return (
@@ -167,19 +105,13 @@ export default function AlertsPage() {
           <CardContent className="p-12 text-center">
             <Activity className="w-12 h-12 mx-auto mb-4 text-red-500" />
             <h3 className="text-lg font-medium text-foreground mb-2">
-              Errore di connessione
+              Errore nel caricamento degli alert
             </h3>
             <p className="text-muted-foreground mb-4">
-              Impossibile connettersi al backend FastAPI. Verifica che il server sia attivo all'indirizzo:
+              Impossibile caricare gli alert dal backend locale. Riprova.
             </p>
-            <code className="bg-muted px-2 py-1 rounded text-sm">
-              https://borsa-alert.onrender.com
-            </code>
             <div className="mt-4">
-              <Button 
-                onClick={() => queryClient.invalidateQueries({ queryKey: ['alerts'] })}
-                variant="outline"
-              >
+              <Button onClick={() => refetch()} variant="outline">
                 Riprova
               </Button>
             </div>
@@ -203,36 +135,27 @@ export default function AlertsPage() {
 
       <div className="grid gap-4">
         {sortedAlerts.map((alert) => (
-          <Card 
-            key={alert.symbol} 
-            className="bg-card border-border hover:bg-muted/50 transition-colors cursor-pointer"
+          <Card
+            key={alert.symbol}
+            className={cn(
+              "bg-card border-border hover:bg-muted/50 transition-colors cursor-pointer",
+              alert.triggered && "border-green-500 ring-1 ring-green-500"
+            )}
             onClick={() => setSelectedTicker(alert.symbol)}
           >
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-4">
                   <div>
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center gap-2">
                       <h3 className="text-lg font-semibold text-foreground">
                         {alert.symbol}
                       </h3>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleWatchlist(alert.symbol);
-                        }}
-                        disabled={addMutation.isPending || removeMutation.isPending}
-                      >
-                        <Star 
-                          className={`w-4 h-4 ${
-                            isInWatchlist(alert.symbol) 
-                              ? 'fill-yellow-400 text-yellow-400' 
-                              : 'text-muted-foreground'
-                          }`} 
-                        />
-                      </Button>
+                      {alert.triggered && (
+                        <span className="text-xs font-semibold text-green-500 bg-green-500/10 px-2 py-0.5 rounded">
+                          🎯 Target raggiunto
+                        </span>
+                      )}
                     </div>
                     <p className="text-sm text-muted-foreground">
                       {alert.symbol} Stock
@@ -244,7 +167,7 @@ export default function AlertsPage() {
                   <div className="text-right">
                     <p className="text-sm text-muted-foreground">Prezzo Attuale</p>
                     <p className="text-lg font-semibold text-foreground">
-                      ${alert.price.toFixed(2)}
+                      {alert.price != null ? `$${alert.price.toFixed(2)}` : '—'}
                     </p>
                   </div>
 
@@ -257,23 +180,31 @@ export default function AlertsPage() {
 
                   <div className="text-right">
                     <p className="text-sm text-muted-foreground">Distanza</p>
-                    <div className="flex items-center space-x-1">
-                      {alert.distanza > 0 ? (
-                        <TrendingUp className="w-4 h-4 text-green-500" />
-                      ) : (
-                        <TrendingDown className="w-4 h-4 text-red-500" />
-                      )}
-                      <span className={`text-lg font-semibold ${
-                        alert.distanza > 0 ? 'text-green-500' : 'text-red-500'
-                      }`}>
-                        ${Math.abs(alert.distanza).toFixed(2)}
-                      </span>
-                    </div>
-                    <p className={`text-xs ${
-                      alert.distanza > 0 ? 'text-green-500' : 'text-red-500'
-                    }`}>
-                      ({alert.percentuale > 0 ? '+' : ''}{alert.percentuale.toFixed(1)}%)
-                    </p>
+                    {alert.distanza != null ? (
+                      <>
+                        <div className="flex items-center space-x-1">
+                          {alert.distanza > 0 ? (
+                            <TrendingUp className="w-4 h-4 text-green-500" />
+                          ) : (
+                            <TrendingDown className="w-4 h-4 text-red-500" />
+                          )}
+                          <span className={`text-lg font-semibold ${
+                            alert.distanza > 0 ? 'text-green-500' : 'text-red-500'
+                          }`}>
+                            ${Math.abs(alert.distanza).toFixed(2)}
+                          </span>
+                        </div>
+                        {alert.percentuale != null && (
+                          <p className={`text-xs ${
+                            alert.distanza > 0 ? 'text-green-500' : 'text-red-500'
+                          }`}>
+                            ({alert.percentuale > 0 ? '+' : ''}{alert.percentuale.toFixed(1)}%)
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-lg font-semibold text-muted-foreground">—</p>
+                    )}
                   </div>
                 </div>
               </div>
