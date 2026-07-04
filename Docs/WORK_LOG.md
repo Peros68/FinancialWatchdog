@@ -2,6 +2,25 @@
 
 Registro cronologico degli incrementi. Voce più recente in alto.
 
+## 2026-07-04 — Versionamento del working tree (piano commit)
+
+**Tipo:** solo versionamento (nessuna modifica al codice applicativo).
+
+- Ripreso il punto in pausa ("piano commit"): il working tree (~33 voci, blocchi 1-8 +
+  rimozione dead-code) era interamente non committato. Verificato verde prima di committare:
+  `check` 0 · `lint` 0 · `test` **31/31** · `build` OK.
+- Impostata identità git **inline** per-commit (`-c user.email/-c user.name`), senza scrivere
+  la config globale (evita prompt del Judge).
+- Creati **5 commit logici** su `main`:
+  1. `17acf6d` Add quality tooling: Vitest, ESLint, env template
+  2. `e8ac643` Stabilize server and add provider-agnostic market-data layer
+  3. `5f91bc7` Migrate client to local backend and clean up screens
+  4. `aec5566` Add Vitest test suite (31 tests)
+  5. `1901a60` Add project docs, operating memory and agent team
+- `.gitignore` esteso: ignora `.local/` (stato interno Claude Code) e `.claude/settings.local.json`
+  (settings per-dev). Non committati: quei due, e lo screenshot orfano non referenziato
+  `attached_assets/image_1782028596346.png` (lasciato non tracciato).
+
 ## 2026-06-21 — Chiusura sessione
 
 **Tipo:** chiusura (solo documentazione, nessuna modifica al codice applicativo).

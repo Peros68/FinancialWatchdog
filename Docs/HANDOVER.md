@@ -40,9 +40,11 @@ npm run build      # build client + bundle server
   rimuovi item), Alerts, Settings, NotFound.
 
 ## 4. Stato del codice / versionamento
-- Branch: `main`. **Nessun commit creato in questa sessione** (ultimo: `b8f54e0`).
-- **~33 voci non committate** (working tree). Decidere se committare prima di proseguire.
-  Suggerito: commit logico per blocchi (vedi `WORK_LOG.md`) — **da fare solo su richiesta utente**.
+- Branch: `main`. **Working tree committato** (2026-07-04): 5 commit logici `17acf6d..1901a60`
+  sopra `b8f54e0` (tooling · server+market-data · client · test · docs/memory/agents).
+  Vedi `WORK_LOG.md` per l'elenco.
+- Tree pulito salvo lo screenshot orfano non referenziato `attached_assets/image_1782028596346.png`
+  (lasciato non tracciato di proposito).
 - Dead-code residuo `client/src/lib/finnhub.ts` **rimosso** (2026-07-04): non importato da nessuna
   parte (le occorrenze "finnhub" in `settings.tsx` sono `finnhubAvailable`). Verde dopo rimozione.
 
