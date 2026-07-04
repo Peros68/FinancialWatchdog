@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ricerca Titoli Yahoo</title>
+  <script src="https://s3.tradingview.com/tv.js"></script>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: #121212;
+      font-family: Arial, sans-serif;
+      color: #ffffff;
+      overflow: hidden;
+    }
+    .container {
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+    .sidebar {
+      width: calc(24% - 10px);
+      background: #121212;
+      display: flex;
+      flex-direction: column;
+      padding: 10px;
+      box-sizing: border-box;
+      transition: transform 0.3s ease, width 0.3s ease;
+    }
+    .sidebar.hidden {
+      width: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+    .separator {
+      width: 1%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #121212;
+    }
+    .toggle-button {
+      display: none;
+      background: #2b2b2b;
+      border: 1px solid #555;
+      color: #fff;
+      width: 28px;
+      height: 40px;
+      font-size: 20px;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 1000;
+      border-radius: 5px;
+    }
+    .toggle-button.visible {
+      display: flex;
+    }
+    .search-area {
+      margin-bottom: 5px;
+    }
+    .results {
+      flex-grow: 1;
+      overflow-y: auto;
+      background: #121212;
+      font-size: 0.85em;
+      scrollbar-width: thin;
+      scrollbar-color: #666 transparent;
+    }
+    .results::-webkit-scrollbar {
+      width: 6px;
+    }
+    .results::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .results::-webkit-scrollbar-thumb {
+      background-color: #666;
+      border-radius: 10px;
+    }
+    input {
+      width: 100%;
+      padding: 6px;
+      font-size: 0.9em;
+      background: #2b2b2b;
+      border: 1px solid #666;
+      color: #fff;
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
+    input::placeholder {
+      color: #bbb;
+    }
+    .result-item {
+      background: #2b2b2b;
+      border: 1px solid #555;
+      padding: 10px;
+      margin-bottom: 8px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .result-item:hover {
+      background: #3a3a3a;
+    }
+    .label { font-weight: bold; color: #ccc; }
+    #chartArea {
+      flex-grow: 1;
+      background: #121212;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+    }
+    #tv-container {
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="sidebar" id="sidebar">
+      <div class="search-area">
+        <input type="text" id="searchInput" placeholder="🔍 Cerca un titolo">
+      </div>
+      <div id="results" class="results"></div>
+    </div>
+
+    <div class="separator">
+      <div class="toggle-button" id="toggleSidebar">◀</div>
+    </div>
+
+    <div id="chartArea">
+      <div id="tv-container"></div>
+    </div>
+  </div>
+
+  <script>
+    let debounceTimeout;
+    const input = document.getElementById("searchInput");
+    const resultsDiv = document.getElementById("results");
+    const sidebar = document.getElementById("sidebar");
+    const toggleBtn = document.getElementById("toggleSidebar");
+
+    input.addEventListener("input", () => {
+      clearTimeout(debounceTimeout);
+      if (!input.value.trim()) {
+        resultsDiv.innerHTML = "";
+        document.getElementById("tv-container").innerHTML = "";
+        toggleBtn.classList.remove("visible");
+        return;
+      }
+      debounceTimeout = setTimeout(searchYahoo, 500);
+    });
+
+    toggleBtn.addEventListener("click", () => {
+      sidebar.classList.toggle("hidden");
+      toggleBtn.textContent = sidebar.classList.contains("hidden") ? "▶" : "◀";
+    });
+
+    async function searchYahoo() {
+      const query = input.value.trim();
+      resultsDiv.innerHTML = "Caricamento...";
+
+      try {
+        const url = `https://api.allorigins.win/raw?url=${encodeURIComponent('https://query1.finance.yahoo.com/v1/finance/search?q=' + query)}`;
+        const res = await fetch(url);
+        const data = await res.json();
+
+        resultsDiv.innerHTML = '';
+
+        if (!data.quotes || data.quotes.length === 0) {
+          resultsDiv.innerHTML = '<p>Nessun risultato trovato.</p>';
+          return;
+        }
+
+        data.quotes.forEach(item => {
+          const div = document.createElement('div');
+          div.className = 'result-item';
+          div.innerHTML = `
+            <div><span class="label">Nome:</span> ${item.longname || item.shortname || 'N/D'}</div>
+            <div><span class="label">Simbolo:</span> ${item.symbol}</div>
+            <div><span class="label">Tipo:</span> ${item.typeDisp || 'N/D'}</div>
+            <div><span class="label">Borsa:</span> ${item.exchDisp || 'N/D'}</div>
+            <div><span class="label">Settore:</span> ${item.sectorDisp || 'N/D'}</div>
+            <div><span class="label">Industria:</span> ${item.industryDisp || 'N/D'}</div>
+          `;
+          div.onclick = () => {
+            renderWidget(convertToTradingViewSymbol(item.symbol, item.exchDisp));
+            toggleBtn.classList.add("visible");
+          };
+          resultsDiv.appendChild(div);
+        });
+      } catch (error) {
+        resultsDiv.innerHTML = '<p>Errore nella ricerca.</p>';
+        console.error(error);
+      }
+    }
+
+    function convertToTradingViewSymbol(symbol, exchange) {
+      if (symbol.endsWith(".MI")) return `MIL:${symbol.replace('.MI', '')}`;
+      if (exchange === "NASDAQ") return `NASDAQ:${symbol}`;
+      if (exchange === "NYSE") return `NYSE:${symbol}`;
+      return symbol;
+    }
+
+    function renderWidget(symbol) {
+      const container = document.getElementById("tv-container");
+      container.innerHTML = "";
+      new TradingView.widget({
+        "container_id": "tv-container",
+        "symbol": symbol,
+        "interval": "D",
+        "timezone": "Europe/Rome",
+        "theme": "dark",
+        "style": "1",
+        "locale": "it",
+        "toolbar_bg": "#1e1e1e",
+        "enable_publishing": false,
+        "withdateranges": true,
+        "allow_symbol_change": true,
+        "details": true,
+        "studies": [
+          "MACD@tv-basicstudies",
+          "RSI@tv-basicstudies"
+        ],
+        "width": "100%",
+        "height": "100%"
+      });
+    }
+  </script>
+</body>
+</html>
