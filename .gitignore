@@ -4,3 +4,10 @@ dist
 server/public
 vite.config.ts.*
 *.tar.gz
+.env
+.env.local
+.env.*.local
+
+# Claude Code local state / per-developer settings (not shared)
+.local/
+.claude/settings.local.json
