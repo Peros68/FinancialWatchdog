@@ -2,10 +2,22 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
-import { Bell, TrendingUp, BarChart3, ChevronDown } from "lucide-react";
+import { Bell, TrendingUp, CandlestickChart, ChevronDown } from "lucide-react";
 import { ChartData } from "@shared/schema";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, ComposedChart } from "recharts";
+import {
+  Area,
+  AreaChart,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  ComposedChart,
+} from "recharts";
 import { cn } from "@/lib/utils";
+import { computeCandleGeometry } from "@/lib/candles";
 import AlertModal from "./alert-modal";
 
 interface StockChartProps {
@@ -33,6 +45,25 @@ const allTimeframes = [
   { label: "Weekly", value: "1W" },
   { label: "Monthly", value: "1M" },
 ];
+
+// Custom candlestick shape rendered inside a Recharts floating Bar (dataKey=[low, high]).
+// Recharts gives us the pixel box for the low→high range; computeCandleGeometry derives
+// the body (open→close) and wick within that same vertical scale.
+function Candle(props: any) {
+  const { x, y, width, height, payload } = props;
+  if (!payload) return null;
+  const { open, high, low, close } = payload;
+  const g = computeCandleGeometry({ x, y, width, height, open, high, low, close });
+
+  return (
+    <g stroke={g.color} fill={g.color}>
+      {/* Wick: high → low */}
+      <line x1={g.centerX} y1={g.wickTop} x2={g.centerX} y2={g.wickBottom} strokeWidth={1} />
+      {/* Body: open → close */}
+      <rect x={g.bodyX} y={g.bodyY} width={g.bodyWidth} height={g.bodyHeight} />
+    </g>
+  );
+}
 
 export default function StockChart({ symbol, currentPrice }: StockChartProps) {
   const [selectedTimeframe, setSelectedTimeframe] = useState("1D");
@@ -95,10 +126,23 @@ export default function StockChart({ symbol, currentPrice }: StockChartProps) {
       ...item,
       date: new Date(item.timestamp).toLocaleDateString(),
       time: new Date(item.timestamp).toLocaleTimeString(),
+      // Floating-bar range consumed by the candlestick shape.
+      highLow: [item.low, item.high] as [number, number],
     }));
   };
 
   const chartDataFormatted = chartData ? formatChartData(chartData.data) : [];
+
+  // Shared Y domain from real highs/lows so candle wicks are never clipped.
+  const priceExtent = chartDataFormatted.reduce(
+    (acc, d) => ({ min: Math.min(acc.min, d.low), max: Math.max(acc.max, d.high) }),
+    { min: Infinity, max: -Infinity }
+  );
+  const pad =
+    priceExtent.max > priceExtent.min ? (priceExtent.max - priceExtent.min) * 0.05 : 1;
+  const yDomain: [number, number] = [priceExtent.min - pad, priceExtent.max + pad];
+
+  const nextChartType = chartType === "line" ? "candlestick" : "line";
 
   return (
     <>
@@ -142,37 +186,27 @@ export default function StockChart({ symbol, currentPrice }: StockChartProps) {
 
             {/* Right Side - Chart Type, Volume, Alert */}
             <div className="flex items-center space-x-2">
-              {/* Chart Type Toggle */}
-              <div className="flex items-center bg-background rounded border border-border">
-                <Button
-                  variant={chartType === "line" ? "default" : "ghost"}
-                  size="sm"
-                  className={cn(
-                    "h-8 px-3 text-sm border-0 rounded-r-none",
-                    chartType === "line"
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                  onClick={() => setChartType("line")}
-                >
-                  <TrendingUp className="w-3 h-3 mr-1" />
-                  Line
-                </Button>
-                <Button
-                  variant={chartType === "candlestick" ? "default" : "ghost"}
-                  size="sm"
-                  className={cn(
-                    "h-8 px-3 text-sm border-0 rounded-l-none",
-                    chartType === "candlestick"
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                  onClick={() => setChartType("candlestick")}
-                >
-                  <BarChart3 className="w-3 h-3 mr-1" />
-                  Candles
-                </Button>
-              </div>
+              {/* Single toggle: switches Line <-> Candles. Shows the view you'll switch TO. */}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 px-3 text-sm bg-background border border-border text-foreground hover:text-primary"
+                onClick={() => setChartType(nextChartType)}
+                aria-label={nextChartType === "candlestick" ? "Passa a candele" : "Passa a linea"}
+                title={nextChartType === "candlestick" ? "Passa a candele" : "Passa a linea"}
+              >
+                {nextChartType === "candlestick" ? (
+                  <>
+                    <CandlestickChart className="w-3 h-3 mr-1" />
+                    Candele
+                  </>
+                ) : (
+                  <>
+                    <TrendingUp className="w-3 h-3 mr-1" />
+                    Linea
+                  </>
+                )}
+              </Button>
 
               {/* Volume Toggle */}
               <Button
@@ -228,7 +262,13 @@ export default function StockChart({ symbol, currentPrice }: StockChartProps) {
             {!isLoading && chartDataFormatted.length > 0 && (
               <ResponsiveContainer width="100%" height="100%">
                 {chartType === "line" ? (
-                  <LineChart data={chartDataFormatted}>
+                  <AreaChart data={chartDataFormatted}>
+                    <defs>
+                      <linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.3} />
+                        <stop offset="100%" stopColor="var(--primary)" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                     <XAxis
                       dataKey="date"
@@ -239,7 +279,7 @@ export default function StockChart({ symbol, currentPrice }: StockChartProps) {
                     <YAxis
                       stroke="var(--muted-foreground)"
                       fontSize={12}
-                      domain={['dataMin - 1', 'dataMax + 1']}
+                      domain={yDomain}
                       axisLine={false}
                       orientation="right"
                       tickFormatter={(value) => `$${value.toFixed(2)}`}
@@ -255,14 +295,15 @@ export default function StockChart({ symbol, currentPrice }: StockChartProps) {
                       formatter={(value: number) => [`$${value.toFixed(2)}`, 'Price']}
                       cursor={{ stroke: 'var(--muted-foreground)', strokeDasharray: '3 3' }}
                     />
-                    <Line
-                      type="linear"
+                    <Area
+                      type="monotone"
                       dataKey="close"
                       stroke="var(--primary)"
                       strokeWidth={2}
+                      fill="url(#areaFill)"
                       dot={false}
                     />
-                  </LineChart>
+                  </AreaChart>
                 ) : (
                   <ComposedChart data={chartDataFormatted}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -275,7 +316,7 @@ export default function StockChart({ symbol, currentPrice }: StockChartProps) {
                     <YAxis
                       stroke="var(--muted-foreground)"
                       fontSize={12}
-                      domain={['dataMin - 1', 'dataMax + 1']}
+                      domain={yDomain}
                       axisLine={false}
                       orientation="right"
                       tickFormatter={(value) => `$${value.toFixed(2)}`}
@@ -288,46 +329,19 @@ export default function StockChart({ symbol, currentPrice }: StockChartProps) {
                         borderRadius: '8px',
                         color: 'var(--foreground)'
                       }}
-                      formatter={(value: number, name: string) => {
-                        return [`$${value.toFixed(2)}`, name === 'open' ? 'Open' : name === 'high' ? 'High' : name === 'low' ? 'Low' : 'Close'];
+                      formatter={(value: number | number[], name: string) => {
+                        if (name === 'highLow' && Array.isArray(value)) {
+                          return [`$${value[1].toFixed(2)} / $${value[0].toFixed(2)}`, 'High / Low'];
+                        }
+                        return [`$${Number(value).toFixed(2)}`, name];
                       }}
                       cursor={{ stroke: 'var(--muted-foreground)', strokeDasharray: '3 3' }}
                     />
-                    {/* High-Low wicks */}
-                    <Line
-                      type="linear"
-                      dataKey="high"
-                      stroke="var(--muted-foreground)"
-                      strokeWidth={1}
-                      dot={false}
-                      connectNulls={false}
-                    />
-                    <Line
-                      type="linear"
-                      dataKey="low"
-                      stroke="var(--muted-foreground)"
-                      strokeWidth={1}
-                      dot={false}
-                      connectNulls={false}
-                    />
-                    {/* OHLC close as simplified bars */}
-                    <Bar
-                      dataKey="close"
-                      fill="var(--primary)"
-                      radius={[1, 1, 1, 1]}
-                    />
+                    {/* Real OHLC candlesticks via custom shape */}
+                    <Bar dataKey="highLow" shape={<Candle />} isAnimationActive={false} />
                   </ComposedChart>
                 )}
               </ResponsiveContainer>
-            )}
-
-            {/* Current Price Line */}
-            {currentPrice && !isLoading && chartDataFormatted.length > 0 && (
-              <div className="price-line" style={{ top: '50%' }}>
-                <div className="absolute right-0 top-0 transform -translate-y-1/2 bg-primary text-primary-foreground px-2 py-1 text-xs font-semibold rounded-l">
-                  ${currentPrice.toFixed(2)}
-                </div>
-              </div>
             )}
           </div>
 

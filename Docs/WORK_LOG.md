@@ -2,6 +2,30 @@
 
 Registro cronologico degli incrementi. Voce più recente in alto.
 
+## 2026-07-04 — Correzione visualizzazione grafico (candele reali + area + toggle unico)
+
+**Tipo:** feature/bugfix frontend (no deps, no schema). Riferimento visivo: `Docs/img/`
+(`Candele.jpg`/`Candele sbagliato.jpg`, `Lineare.jpg`/`Lineare_sbagliato.jpg`).
+
+Difetti corretti in `client/src/components/stock-chart.tsx`:
+- **Candele finte → candele OHLC reali.** Prima: `<Bar dataKey="close">` (barre piene dal
+  fondo, come il volume) + due `<Line>` continue high/low. Ora: `<Bar dataKey="highLow">`
+  (range [low,high]) con **shape custom** `Candle` che disegna stoppino high→low e corpo
+  open→close, **verde** se close≥open / **rosso** altrimenti.
+- **Linea → area.** `LineChart`+`Line` sostituiti da `AreaChart`+`Area` con gradiente sotto
+  la linea (come l'esempio corretto).
+- **Toggle unico.** I due pulsanti separati Line/Candles sono ora **un solo tasto** che alterna
+  le due viste (mostra icona+etichetta della vista verso cui si passa: "Candele"/"Linea").
+- **Y domain condiviso** calcolato dai veri high/low (stoppini mai tagliati).
+- Rimossa la finta "price line" fissa a `top:50%` (non legata al prezzo reale — stesso vizio
+  dei mock già eliminati nel blocco 5).
+
+**Geometria pura + test:** logica estratta in `client/src/lib/candles.ts`
+(`computeCandleGeometry`, colori); `tests/candles.test.ts` (8 test: colore up/down, stoppino
+full-range, corpo in scala, doji ≥1px, no divisione per zero, larghezza corpo).
+
+**Esito:** `check` 0 · `lint` 0 · `test` **39/39** · `build` OK.
+
 ## 2026-07-04 — Versionamento del working tree (piano commit)
 
 **Tipo:** solo versionamento (nessuna modifica al codice applicativo).
