@@ -88,10 +88,11 @@ export class MemStorage implements IStorage {
 
   async createWatchlist(insertWatchlist: InsertWatchlist): Promise<Watchlist> {
     const id = this.currentWatchlistId++;
-    const watchlist: Watchlist = { 
-      ...insertWatchlist, 
-      id, 
-      createdAt: new Date() 
+    const watchlist: Watchlist = {
+      ...insertWatchlist,
+      id,
+      userId: insertWatchlist.userId ?? null,
+      createdAt: new Date()
     };
     this.watchlists.set(id, watchlist);
     return watchlist;
@@ -113,7 +114,7 @@ export class MemStorage implements IStorage {
 
   async addWatchlistItem(insertItem: InsertWatchlistItem): Promise<WatchlistItem> {
     const id = this.currentWatchlistItemId++;
-    const item: WatchlistItem = { ...insertItem, id };
+    const item: WatchlistItem = { ...insertItem, id, watchlistId: insertItem.watchlistId ?? null };
     this.watchlistItems.set(id, item);
     return item;
   }
@@ -140,9 +141,10 @@ export class MemStorage implements IStorage {
 
   async createAlert(insertAlert: InsertAlert): Promise<Alert> {
     const id = this.currentAlertId++;
-    const alert: Alert = { 
-      ...insertAlert, 
-      id, 
+    const alert: Alert = {
+      ...insertAlert,
+      id,
+      userId: insertAlert.userId ?? null,
       isActive: true,
       createdAt: new Date()
     };
@@ -204,6 +206,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteWatchlist(id: number): Promise<void> {
+    // Remove child items first to avoid orphaned rows / FK violations,
+    // mirroring MemStorage's cascade behavior.
+    await db.delete(watchlistItems).where(eq(watchlistItems.watchlistId, id));
     await db.delete(watchlists).where(eq(watchlists.id, id));
   }
 
@@ -264,4 +269,20 @@ export class DatabaseStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+// Storage selection (groundwork for decisions D1/D4):
+// - No DATABASE_URL  -> in-memory storage (current local default; data not persisted).
+// - DATABASE_URL set -> PostgreSQL-backed storage (DatabaseStorage).
+// This keeps local behavior unchanged until a DATABASE_URL is provided, while
+// preparing the app to use a database without further code changes.
+function createStorage(): IStorage {
+  if (process.env.DATABASE_URL) {
+    console.log("[storage] DATABASE_URL detected — using DatabaseStorage (PostgreSQL).");
+    return new DatabaseStorage();
+  }
+  console.log(
+    "[storage] No DATABASE_URL — using in-memory storage (MemStorage). Data is NOT persisted across restarts.",
+  );
+  return new MemStorage();
+}
+
+export const storage: IStorage = createStorage();

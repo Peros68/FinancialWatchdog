@@ -1,6 +1,18 @@
+import "./loadEnv"; // MUST be first: loads .env before provider modules read process.env
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+
+// Cross-platform environment detection.
+// Inline `NODE_ENV=...` in npm scripts is not portable (POSIX shells vs Windows
+// cmd), so the scripts no longer set it. We honor NODE_ENV when explicitly
+// provided and otherwise infer the mode from the entrypoint: the bundled
+// production build runs as dist/index.js, while development runs the TypeScript
+// source via tsx (index.ts).
+const isProduction =
+  process.env.NODE_ENV === "production" ||
+  (process.env.NODE_ENV === undefined && import.meta.url.endsWith(".js"));
+process.env.NODE_ENV = isProduction ? "production" : "development";
 
 const app = express();
 app.use(express.json());
@@ -43,27 +55,28 @@ app.use((req, res, next) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
-    res.status(status).json({ message });
-    throw err;
+    if (!res.headersSent) {
+      res.status(status).json({ message });
+    }
+    console.error(err);
   });
 
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes
-  if (app.get("env") === "development") {
+  if (!isProduction) {
     await setupVite(app, server);
   } else {
     serveStatic(app);
   }
 
-  // ALWAYS serve the app on port 5000
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
+  // Serve the app (both API and client) on port 5000.
+  // `reusePort` is intentionally omitted: SO_REUSEPORT is not supported on all
+  // platforms (e.g. Windows) and can make listen() fail on recent Node versions.
   const port = 5000;
   server.listen({
     port,
     host: "0.0.0.0",
-    reusePort: true,
   }, () => {
     log(`serving on port ${port}`);
   });

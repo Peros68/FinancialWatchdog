@@ -106,3 +106,25 @@ export interface ChartData {
   close: number;
   volume: number;
 }
+
+export interface DividendEntry {
+  date: string; // ISO date (YYYY-MM-DD)
+  amount: number;
+}
+
+// Normalized "simple & reliable" fundamentals. All fields nullable: providers fill
+// what they can (Yahoo: sector/industry/dividends; Finnhub: market cap/EPS/multiples).
+// Full statements (income/balance/cash flow) are intentionally NOT included here.
+export interface Fundamentals {
+  symbol: string;
+  sector: string | null;
+  industry: string | null;
+  marketCapitalization: number | null; // source-dependent unit (Finnhub: millions)
+  peRatio: number | null;
+  pbRatio: number | null;
+  psRatio: number | null;
+  eps: number | null;
+  dividendYield: number | null; // percent
+  dividends: DividendEntry[] | null; // recent cash dividends (Yahoo chart events)
+  sources: string[]; // providers that contributed (e.g. ["yahoo","finnhub"])
+}
