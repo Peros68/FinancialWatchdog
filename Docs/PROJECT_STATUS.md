@@ -11,6 +11,12 @@ market cap/EPS/multipli via Finnhub se key) + **caricamento `.env`** (`process.l
 > **Sessione chiusa il 2026-06-21.** Per riprendere: leggere `Docs/HANDOVER.md`.
 > Versionamento: branch `main`, ~33 voci **non committate** (nessun commit in sessione).
 
+> **Aggiornamento 2026-07-05 — Grafico avanzato.** Ampliato lo strumento grafico del titolo
+> (`client/src/components/stock-chart.tsx`) con timeframe/assi rivisti, tooltip leggibile,
+> livello prezzo, e **strumenti di disegno** (linee orizzontale/inclinata/verticale) con
+> possibilità di **armare una linea come alert sonoro**. Dettaglio nella sezione
+> "Grafico avanzato — strumenti di disegno & alert" in fondo. **check 0 · lint 0 · test 52/52 · build OK.**
+
 ## Team di progetto (.claude/agents/)
 `chief-architect` (coordinamento/decisioni), `developer` (fullstack), `test-engineer` (validazione).
 
@@ -123,3 +129,55 @@ idempotente · client API centralizzato · (distacco pagina Alerts dal backend e
 2. (Opz.) Monitoraggio alert "fase 2" server-side: richiede schema (`triggered_at`) + scheduler → con PostgreSQL.
 3. PostgreSQL locale secondo i 5 punti sopra (decisione utente).
 4. (Opz.) Rename watchlist (nuova API), client API centralizzato, de-Replit prima di un eventuale deploy.
+
+---
+
+## Grafico avanzato — strumenti di disegno & alert (2026-07-05)
+
+Tutto in `client/src/components/stock-chart.tsx` (frontend, nessuna modifica allo schema DB;
+gli alert riusano `/api/alerts`). Helper puri e testati in `client/src/lib/chart-axis.ts`
+(`tests/chart-axis.test.ts`) e `client/src/lib/chart-drawings.ts`.
+
+### Timeframe e asse temporale
+- **Preset rapidi** con convenzione: minuti in minuscolo, dall'ora in su in maiuscolo →
+  `15m · 1H · 1G · 1S · 1M · 1A · 5A` (+ menù "altri" con la lista completa). Default `1A`.
+- **Asse X compatto e distribuito equamente** (`selectTicks`/`formatAxisTick`): ~6 tick
+  equidistanti, formato per timeframe → 5A=anni (2022…2025), 1A=mesi (un mese sì/uno no),
+  1G/1H=ora `HH:mm`, settimana/mese=`5 gen`. Niente affollamento.
+
+### Tooltip (fumetto) e livello prezzo
+- Tooltip ad **alto contrasto** (testo su `--foreground`, sfondo `--popover`) e con **dettaglio
+  maggiore** del tick (`formatTooltipLabel`): es. su 5A l'asse mostra `2024` ma il tooltip
+  `5 gen 2024`; sulle viste intraday aggiunge `HH:mm`.
+- **Linea tratteggiata sull'ultimo prezzo** + **pill del prezzo sul margine destro** (tema-aware).
+- **Toggle occhio** (`Eye/EyeOff`) per nascondere insieme tooltip + linea/pill prezzo, così non
+  disturbano mentre si disegna.
+
+### Strumenti di disegno (icona righello, menù a tendina)
+Linee **bianche**. Selezione a click con **auto-hide dei controlli dopo ~3s** di inattività
+(grafico pulito). Overlay SVG dentro il chart via Recharts `<Customized>` con **componente
+stabile** (niente rimontaggio → l'input resta focalizzato e il grafico non si ridisegna a ogni tasto;
+serie disegnate con `isAnimationActive={false}`).
+
+- **Linea orizzontale**: appare già in **preview** mentre la posizioni (con il prezzo mostrato a
+  sinistra). Al click sulla linea, nel **margine sinistro vuoto** compaiono: **prezzo editabile**
+  (digiti il valore, la linea si sposta **solo alla conferma** Invio/blur), **selettore** per
+  scorrere il livello trascinando, **campanella** (arma/disarma alert), **×** per eliminare.
+- **Linea inclinata (trend)**: si disegna a **2 punti** (dopo il primo click la linea segue il
+  cursore, estrapolata a tutta larghezza, e si fissa al secondo click). I 2 punti definiscono
+  solo l'inclinazione: la linea **prosegue oltre** su tutto il grafico. Al click compaiono i
+  **pallini** trascinabili per correggere il trend, la **campanella** e la **×** (posta all'inizio
+  sinistro visibile della linea).
+- **Linea verticale**: un click la posiziona; alla **base** mostra la **data/giorno** del punto;
+  trascinabile orizzontalmente; × per eliminare. È un semplice marcatore temporale (nessun alert).
+
+### Campanella = alert sonoro
+- Una linea è **solo visiva** finché non si clicca la **campanella**: allora **arma** la linea
+  come alert (crea un alert su `/api/alerts` — above/below in base al prezzo corrente; per il trend
+  usa il valore proiettato all'ultimo punto). Ri-cliccando si **disarma** (elimina l'alert).
+- Quando è armata, la campanella è **persistente** e posizionata al margine (per distinguerla).
+- Se il **prezzo corrente** attraversa/tocca una linea armata parte un **beep** (Web Audio) +
+  toast. La persistenza dell'alert e il monitoraggio "classico" restano gestiti dalla pagina Alerts.
+
+**Nota (scope):** l'alert del trend è un prezzo statico proiettato al momento dell'arma/drag; non
+si ricalcola nel tempo (un trend-alert dinamico richiederebbe modifica schema → decisione utente).

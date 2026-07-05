@@ -102,10 +102,79 @@ Finnhub + Yahoo proxy · porta 5000 (API + client serviti insieme).
   (`computeCandleGeometry`) + `tests/candles.test.ts`. Esempi visivi in `Docs/img/`.
 - Watchlist: aggiunta ELIMINAZIONE watchlist (AlertDialog + DELETE /api/watchlists/:id). Rename TODO.
 - File legacy ELIMINATI (legacy.ts, legacyAlertApi.ts). D2 chiusa anche a livello sorgente.
+- **Grafico — timeframe + assi + linee alert disegnabili (2026-07-05):**
+  - Label timeframe convenzione: minuti minuscolo (`15m`), dall'ora in su maiuscolo
+    (`1H` `1G` `1S` `1M` `1A` `5A`). Aggiunto quick `1H` (value `1h`).
+  - Asse X compatto/non affollato: `client/src/lib/chart-axis.ts` (`granularityFor`,
+    `formatAxisTick`, `selectTicks`) — 5A→anni, 1A→mesi, 1G/1H→HH:mm; dataKey=`timestamp`
+    (type category) + `ticks`/`tickFormatter`. Test `tests/chart-axis.test.ts` (9).
+  - `ReferenceLine` tratteggiata sull'ultimo prezzo (label prezzo insideTopRight).
+  - Nuova icona `PencilRuler` (dropdown) → **linea orizzontale** (cursore ns-resize a
+    sinistra per scorrere il livello, tag prezzo a destra) e **linea inclinata a 2 punti**
+    (anchor draggabili, preview rubber-band). Overlay SVG dentro il chart via Recharts
+    `<Customized>` (scala da yAxisMap+offset; geometria in `client/src/lib/chart-drawings.ts`,
+    puro). Ogni linea **arma un alert reale**: POST alla creazione, PUT al drag-end
+    (prezzo proiettato al last col per il trend), DELETE alla rimozione. Nessuna modifica
+    schema (riusa `/api/alerts` above/below). Verificato live: PUT /api/alerts sincronizza
+    il target durante il drag.
+  - **Rifiniture (2026-07-05, feedback utente):** (a) tick asse X distribuiti EQUAMENTE
+    (even-by-index + dedup label consecutive; anno resta 1 per anno) — vedi test "spreads 1A".
+    (b) Pill prezzo ultimo valore sul MARGINE DESTRO (fill=foreground/text=background, tema-aware,
+    esempio `Docs/img/Livello prezzo.jpg`), rimossa la label sulla ReferenceLine. (c) Linea alert
+    orizzontale più SOTTILE (strokeWidth 1) con tag prezzo a SINISTRA prima del selettore di
+    scorrimento. (d) Linea trend estrapolata a TUTTA larghezza (i 2 anchor decidono solo
+    l'inclinazione, clip al plot box), SENZA tag prezzo. (e) Tooltip: contrasto fix
+    (labelStyle/itemStyle=foreground, bg=popover) + `formatTooltipLabel` con dettaglio maggiore
+    del tick (es. 5A asse="2024" ma tooltip="5 gen 2024"; intraday aggiunge HH:mm).
+  - **Rifiniture v2 (2026-07-05, feedback su `Docs/img/Attuale.jpg`):** i controlli della
+    linea orizzontale sono FUORI dal grafico, in un MARGINE SINISTRO vuoto (`margin.left=LEFT_MARGIN=82`
+    su AreaChart/ComposedChart/BarChart per allineare i plot), resi con `<foreignObject>` HTML:
+    prezzo EDITABILE (`<input>` con buffer `editing`, live-update + commit su blur/Enter → PUT alert),
+    selettore drag (GripHorizontal, handle "level") e × (X, elimina). Linea trend: × spostata
+    sull'ESTREMITÀ SINISTRA (box.left, y clampata). Linee e handle ora BIANCHI (`DRAW_COLOR=#fff`).
+    La linea orizzontale appare in PREVIEW mentre si posiziona (hover → preview tratteggiata) per
+    precisione. Placement rect: onPointerMove aggiorna hover per ogni drawMode.
+  - **Rifiniture v3 (2026-07-05):** (a) toggle Eye/EyeOff in toolbar (`showPriceGuides`) che
+    nasconde/mostra INSIEME il tooltip (entrambi i chart) e la linea+pill del livello prezzo
+    (davano fastidio mentre si disegna la trend). (b) I pallini di riposizionamento della trend
+    ora sono AUTO-HIDE: nascosti di default, appaiono al click sulla linea (hit-line trasparente
+    larga 12px con `pointerEvents:"stroke"` → `pokeTrend`), timer 3s che li nasconde se inattivo;
+    ogni interazione (click/drag anchor, drag-end, creazione) riarma il timer (`trendTimerRef`,
+    `activeTrendId`). × visibile solo quando la trend è attiva.
+  - **Rifiniture v4 (2026-07-05):** (a) FIX FOCUS input prezzo: `<Customized>` ora usa un
+    componente STABILE (`drawLayerComponentRef` → `drawLayerRenderRef`) così il layer SVG viene
+    riconciliato e non rimontato a ogni render → l'input prezzo è digitabile (la linea si
+    riposiziona live mentre scrivi; commit su blur/Enter). (b) Meccanismo click-to-show unificato
+    (`activeDrawingId` + `pokeDrawing`/`idleTimerRef`, auto-hide 3s) anche per la linea ORIZZONTALE:
+    a riposo mostra solo la linea + prezzo compatto read-only; al click sulla linea (hit-line
+    trasparente) appaiono input editabile + selettore + ×; timer in pausa mentre l'input è a fuoco.
+    (c) × della trend spostata sul VERO inizio-sinistra della linea visibile (intersezione col plot
+    box, `leftPt`). (d) Preview trend: dopo il primo punto la linea è già mostrata estrapolata a
+    tutta larghezza attraverso primo punto + cursore (come la finale), si fissa al secondo click.
+  - **Rifiniture v5 (2026-07-05):** (a) input prezzo orizzontale: onChange aggiorna SOLO il
+    buffer testo; la linea si sposta solo al commit (Invio/blur), non a ogni tasto. (b) Preview
+    trend/orizzontale resa `pointerEvents:none` e il rect di cattura spostato COME ULTIMO figlio
+    (in cima) → durante il posizionamento la preview non ruba gli eventi: la linea resta stabile
+    dopo il primo click (niente flicker/scomparsa quando il mouse è fermo) e il secondo click
+    arriva sempre al rect. (c) In posizionamento della linea orizzontale il livello prezzo è già
+    mostrato a sinistra (label bianca sul cursore) prima di confermare.
+  - **Rifiniture v6 (2026-07-05):** (a) NUOVA linea VERTICALE (drawMode "vertical"): un click
+    la posiziona, alla base mostra la data (`formatTooltipLabel` del punto più vicino), drag
+    orizzontale (handle "x"), × su select, preview durante il posizionamento. (b) Modello ALERT
+    cambiato: la linea è solo visiva finché non si clicca la CAMPANELLA (`toggleArm`) → arma
+    (crea alert `/api/alerts`), ri-click disarma (DELETE). Rimosso l'auto-create alla creazione.
+    Campanella persistente al margine quando armata (`bellHandle`). Beep Web Audio (`playBeep`) +
+    toast quando `currentPrice` attraversa una linea armata (effect su prevPriceRef). (c) FIX
+    "redraw a ogni tasto": input prezzo estratto in componente figlio `PriceInput` con stato
+    proprio (il typing ri-renderizza solo l'input, non StockChart/Recharts) + `isAnimationActive
+    ={false}` su Area e Bar volume. Rimosso lo stato `editing`.
+  - **Doc aggiornata:** `Docs/PROJECT_STATUS.md` → sezione "Grafico avanzato — strumenti di disegno
+    & alert (2026-07-05)" con tutte le funzionalità del grafico.
+  - Qualità dopo rifiniture: check 0 · lint 0 · Vitest 52/52 · build OK.
 
 ## Qualità
-ESLint 0 · Vitest 31/31 (health, storage, mapping+trigger, watchlist/alerts/settings API, marketData,
-fundamentals) · check 0 · build ok.
+ESLint 0 · Vitest 52/52 (health, storage, mapping+trigger, watchlist/alerts/settings API, marketData,
+fundamentals, candles, chart-axis) · check 0 · build ok.
 
 ## SESSIONE CHIUSA (2026-06-21)
 Per ripresa leggere `Docs/HANDOVER.md`. Verde: check 0 · lint 0 · test 31/31 · build OK.

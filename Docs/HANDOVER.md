@@ -43,8 +43,8 @@ npm run build      # build client + bundle server
 - Branch: `main`. **Working tree committato** (2026-07-04): 5 commit logici `17acf6d..1901a60`
   sopra `b8f54e0` (tooling · server+market-data · client · test · docs/memory/agents).
   Vedi `WORK_LOG.md` per l'elenco.
-- Tree pulito salvo lo screenshot orfano non referenziato `attached_assets/image_1782028596346.png`
-  (lasciato non tracciato di proposito).
+- Screenshot orfano `attached_assets/image_1782028596346.png` **rimosso** (2026-07-05): non
+  referenziato da codice/doc, tree ora pulito.
 - Dead-code residuo `client/src/lib/finnhub.ts` **rimosso** (2026-07-04): non importato da nessuna
   parte (le occorrenze "finnhub" in `settings.tsx` sono `finnhubAvailable`). Verde dopo rimozione.
 
