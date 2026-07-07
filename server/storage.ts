@@ -27,6 +27,8 @@ export interface IStorage {
   // Alert operations
   getAlerts(userId: number): Promise<Alert[]>;
   getAlertsBySymbol(userId: number, symbol: string): Promise<Alert[]>;
+  /** Alerts eligible for server-side monitoring: active and not yet triggered (all users). */
+  getActiveAlerts(): Promise<Alert[]>;
   createAlert(alert: InsertAlert): Promise<Alert>;
   updateAlert(id: number, updates: Partial<Alert>): Promise<Alert | undefined>;
   deleteAlert(id: number): Promise<void>;
@@ -145,6 +147,12 @@ export class MemStorage implements IStorage {
     );
   }
 
+  async getActiveAlerts(): Promise<Alert[]> {
+    return Array.from(this.alerts.values()).filter(
+      alert => alert.isActive === true && alert.triggeredAt == null
+    );
+  }
+
   async createAlert(insertAlert: InsertAlert): Promise<Alert> {
     const id = this.currentAlertId++;
     const alert: Alert = {
@@ -174,7 +182,7 @@ export class MemStorage implements IStorage {
 }
 
 import { db } from "./db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 
 export class DatabaseStorage implements IStorage {
   async getUser(id: number): Promise<User | undefined> {
@@ -252,6 +260,13 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(alerts)
       .where(and(eq(alerts.userId, userId), eq(alerts.symbol, symbol)));
+  }
+
+  async getActiveAlerts(): Promise<Alert[]> {
+    return await db
+      .select()
+      .from(alerts)
+      .where(and(eq(alerts.isActive, true), isNull(alerts.triggeredAt)));
   }
 
   async createAlert(insertAlert: InsertAlert): Promise<Alert> {

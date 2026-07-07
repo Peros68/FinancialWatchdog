@@ -59,4 +59,21 @@ describe("MemStorage — alerts", () => {
     await storage.deleteAlert(alert.id);
     expect(await storage.getAlerts(user.id)).toHaveLength(0);
   });
+
+  it("getActiveAlerts returns only active, not-yet-triggered alerts (all users)", async () => {
+    const storage = new MemStorage();
+    const u1 = await storage.createUser({ username: "u3", password: "p" });
+    const u2 = await storage.createUser({ username: "u4", password: "p" });
+
+    const eligible = await storage.createAlert({ userId: u1.id, symbol: "AAPL", targetPrice: 1, alertType: "above" });
+    const otherUser = await storage.createAlert({ userId: u2.id, symbol: "MSFT", targetPrice: 2, alertType: "below" });
+    const inactive = await storage.createAlert({ userId: u1.id, symbol: "TSLA", targetPrice: 3, alertType: "above" });
+    await storage.updateAlert(inactive.id, { isActive: false });
+    const triggered = await storage.createAlert({ userId: u1.id, symbol: "NVDA", targetPrice: 4, alertType: "above" });
+    await storage.updateAlert(triggered.id, { triggeredAt: new Date() });
+
+    const active = await storage.getActiveAlerts();
+    const ids = active.map((a) => a.id).sort();
+    expect(ids).toEqual([eligible.id, otherUser.id].sort());
+  });
 });

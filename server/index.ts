@@ -2,6 +2,9 @@ import "./loadEnv"; // MUST be first: loads .env before provider modules read pr
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { createAlertScheduler } from "./alertScheduler";
+import { storage } from "./storage";
+import { marketData } from "./marketData";
 
 // Cross-platform environment detection.
 // Inline `NODE_ENV=...` in npm scripts is not portable (POSIX shells vs Windows
@@ -80,4 +83,19 @@ app.use((req, res, next) => {
   }, () => {
     log(`serving on port ${port}`);
   });
+
+  // Alert monitoring phase 2 (server-side): periodically compare active alerts
+  // against live quotes and persist `triggeredAt` when a target is hit.
+  // ALERT_CHECK_INTERVAL_MS overrides the 60s default; 0 (or "off") disables it.
+  const rawInterval = process.env.ALERT_CHECK_INTERVAL_MS;
+  const intervalMs = rawInterval === undefined ? 60_000 : Number(rawInterval);
+  if (Number.isFinite(intervalMs) && intervalMs >= 1000) {
+    const scheduler = createAlertScheduler(
+      { storage, getQuote: (symbol) => marketData.quote(symbol), log },
+      intervalMs,
+    );
+    scheduler.start();
+  } else {
+    log("[alerts] server-side monitoring disabled (ALERT_CHECK_INTERVAL_MS)");
+  }
 })();
