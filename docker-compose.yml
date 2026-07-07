@@ -1,0 +1,31 @@
+# Local PostgreSQL for FinancialWatchdog (decision D1/D4: local only, no cloud).
+#
+# Usage:
+#   docker compose up -d          # start PostgreSQL in the background
+#   docker compose down           # stop (keeps data in the named volume)
+#   docker compose down -v        # stop and DELETE all data
+#
+# Then set DATABASE_URL in your local .env (NOT committed), e.g.:
+#   DATABASE_URL=postgres://finwatch:finwatch@localhost:5432/finwatch
+# and run: npm run db:push && npm run db:seed
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: finwatch-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: finwatch
+      POSTGRES_PASSWORD: finwatch
+      POSTGRES_DB: finwatch
+    ports:
+      - "5432:5432"
+    volumes:
+      - finwatch-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U finwatch -d finwatch"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  finwatch-pgdata:

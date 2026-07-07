@@ -1,4 +1,4 @@
-import { 
+import {
   users, watchlists, watchlistItems, alerts,
   type User, type InsertUser,
   type Watchlist, type InsertWatchlist,
@@ -114,7 +114,13 @@ export class MemStorage implements IStorage {
 
   async addWatchlistItem(insertItem: InsertWatchlistItem): Promise<WatchlistItem> {
     const id = this.currentWatchlistItemId++;
-    const item: WatchlistItem = { ...insertItem, id, watchlistId: insertItem.watchlistId ?? null };
+    const item: WatchlistItem = {
+      ...insertItem,
+      id,
+      watchlistId: insertItem.watchlistId ?? null,
+      currency: insertItem.currency ?? null,
+      createdAt: new Date(),
+    };
     this.watchlistItems.set(id, item);
     return item;
   }
@@ -146,7 +152,8 @@ export class MemStorage implements IStorage {
       id,
       userId: insertAlert.userId ?? null,
       isActive: true,
-      createdAt: new Date()
+      createdAt: new Date(),
+      triggeredAt: null,
     };
     this.alerts.set(id, alert);
     return alert;

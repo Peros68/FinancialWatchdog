@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, real } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, real, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -11,26 +11,35 @@ export const users = pgTable("users", {
 export const watchlists = pgTable("watchlists", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  userId: integer("user_id").references(() => users.id),
+  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const watchlistItems = pgTable("watchlist_items", {
-  id: serial("id").primaryKey(),
-  watchlistId: integer("watchlist_id").references(() => watchlists.id),
-  symbol: text("symbol").notNull(),
-  name: text("name").notNull(),
-  exchange: text("exchange").notNull(),
-});
+export const watchlistItems = pgTable(
+  "watchlist_items",
+  {
+    id: serial("id").primaryKey(),
+    watchlistId: integer("watchlist_id").references(() => watchlists.id, { onDelete: "cascade" }),
+    symbol: text("symbol").notNull(),
+    name: text("name").notNull(),
+    exchange: text("exchange").notNull(),
+    currency: text("currency"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => ({
+    watchlistSymbolUnique: unique("watchlist_symbol_unique").on(table.watchlistId, table.symbol),
+  }),
+);
 
 export const alerts = pgTable("alerts", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id),
+  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
   symbol: text("symbol").notNull(),
   targetPrice: real("target_price").notNull(),
   alertType: text("alert_type").notNull(), // 'above' | 'below'
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
+  triggeredAt: timestamp("triggered_at"),
 });
 
 // Zod schemas
@@ -49,6 +58,7 @@ export const insertWatchlistItemSchema = createInsertSchema(watchlistItems).pick
   symbol: true,
   name: true,
   exchange: true,
+  currency: true,
 });
 
 export const insertAlertSchema = createInsertSchema(alerts).pick({

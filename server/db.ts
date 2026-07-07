@@ -1,16 +1,20 @@
-import { Pool, neonConfig } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-serverless';
-import ws from "ws";
+import pg from "pg";
+import { drizzle } from "drizzle-orm/node-postgres";
+
+// `pg` is a CommonJS module: under Node's ESM loader a named `{ Pool }` import is not
+// reliably resolved, so destructure from the default export instead.
+const { Pool } = pg;
 import * as schema from "@shared/schema";
 
-neonConfig.webSocketConstructor = ws;
-
 // Lazy initialization: importing this module must NOT crash when DATABASE_URL is
-// absent. The app currently runs with in-memory storage (MemStorage), so the DB
+// absent. The app can run with in-memory storage (MemStorage), so the DB
 // connection is only needed if/when DatabaseStorage is actually used. The pool and
 // drizzle client are created on first access; a missing DATABASE_URL throws only
-// then, with a clear message — keeping the door open for a future DATABASE_URL
-// without choosing or provisioning a database now.
+// then, with a clear message.
+//
+// Driver: node-postgres (`pg`), for a self-hosted/local PostgreSQL (e.g. Docker).
+// `@neondatabase/serverless` stays in package.json for a possible future Neon
+// cloud deploy (decision D4), but is not used here.
 function createDb() {
   if (!process.env.DATABASE_URL) {
     throw new Error(
@@ -18,7 +22,7 @@ function createDb() {
     );
   }
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-  return { pool, db: drizzle({ client: pool, schema }) };
+  return { pool, db: drizzle(pool, { schema }) };
 }
 
 type DbBundle = ReturnType<typeof createDb>;
