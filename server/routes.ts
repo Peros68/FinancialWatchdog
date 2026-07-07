@@ -1,8 +1,15 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertWatchlistSchema, insertWatchlistItemSchema, insertAlertSchema } from "@shared/schema";
+import {
+  insertWatchlistSchema,
+  insertWatchlistItemSchema,
+  insertAlertSchema,
+  insertDrawingSchema,
+  updateDrawingSchema,
+} from "@shared/schema";
 import { marketData } from "./marketData";
+import { reprojectOnce } from "./alertReprojector";
 import { getPreferredProvider, setPreferredProvider, isValidPreference } from "./settings";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -252,6 +259,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch {
       res.status(500).json({ error: "Failed to delete alert" });
+    }
+  });
+
+  // Chart drawing endpoints (persistent lines; armed ⇔ alertId set)
+  app.get("/api/drawings/:symbol", async (req, res) => {
+    try {
+      const drawings = await storage.getDrawings(defaultUserId, req.params.symbol);
+      res.json(drawings);
+    } catch {
+      res.status(500).json({ error: "Failed to get drawings" });
+    }
+  });
+
+  app.post("/api/drawings", async (req, res) => {
+    try {
+      const validation = insertDrawingSchema.safeParse({ ...req.body, userId: defaultUserId });
+      if (!validation.success) {
+        return res.status(400).json({ error: validation.error.issues });
+      }
+
+      const drawing = await storage.createDrawing(validation.data);
+      res.json(drawing);
+    } catch {
+      res.status(500).json({ error: "Failed to create drawing" });
+    }
+  });
+
+  app.put("/api/drawings/:id", async (req, res) => {
+    try {
+      const validation = updateDrawingSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ error: validation.error.issues });
+      }
+
+      const id = parseInt(req.params.id);
+      const updates = validation.data;
+      const drawing = Object.keys(updates).length === 0
+        ? await storage.getDrawing(id)
+        : await storage.updateDrawing(id, updates);
+      if (!drawing) {
+        return res.status(404).json({ error: "Drawing not found" });
+      }
+      // Keep the linked alert in sync right away (don't wait for the daily
+      // pass): re-project the moved/armed line to now. Best-effort.
+      if (drawing.alertId != null) {
+        try {
+          await reprojectOnce(
+            { storage, getQuote: (symbol) => marketData.quote(symbol) },
+            [drawing],
+          );
+        } catch {
+          /* non-fatal: the daily reprojection will catch up */
+        }
+      }
+      res.json(drawing);
+    } catch {
+      res.status(500).json({ error: "Failed to update drawing" });
+    }
+  });
+
+  app.delete("/api/drawings/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const drawing = await storage.getDrawing(id);
+      if (drawing?.alertId != null) {
+        await storage.deleteAlert(drawing.alertId);
+      }
+      await storage.deleteDrawing(id);
+      res.json({ success: true });
+    } catch {
+      res.status(500).json({ error: "Failed to delete drawing" });
     }
   });
 

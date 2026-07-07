@@ -47,9 +47,19 @@ import {
   trendValueAt,
   alertPriceFor,
   alertTypeFor,
+  timeToIndex,
+  indexToTime,
   type Anchor,
   type PlotBox,
 } from "@/lib/chart-drawings";
+import {
+  fetchDrawings,
+  createDrawing as apiCreateDrawing,
+  updateDrawing as apiUpdateDrawing,
+  deleteDrawing as apiDeleteDrawing,
+  type DrawingRow,
+  type DrawingAnchorsPayload,
+} from "@/lib/drawingsApi";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import AlertModal from "./alert-modal";
@@ -88,25 +98,33 @@ const allTimeframes = [
 // ---- Drawing tools (price alert lines) -------------------------------------
 type DrawMode = "horizontal" | "trend" | "vertical" | null;
 
+// Every drawing is persisted in the DB (dbId) with TIME anchors; on screen it
+// lives as fractional data indexes. Trend/vertical also carry their canonical
+// times so indexes can be recomputed when the loaded timeframe changes.
 interface HLine {
   id: string;
   kind: "horizontal";
   price: number;
   armed?: boolean; // acts as a sound alert when the price touches it
   alertId?: number;
+  dbId?: number;
 }
 interface TLine {
   id: string;
   kind: "trend";
   a: Anchor;
   b: Anchor;
+  times?: { a: number; b: number }; // anchor instants (epoch ms), persisted form
   armed?: boolean;
   alertId?: number;
+  dbId?: number;
 }
 interface VLine {
   id: string;
   kind: "vertical";
   index: number; // fractional data position; the day is shown at its base
+  time?: number; // canonical instant (epoch ms), persisted form
+  dbId?: number;
 }
 type Drawing = HLine | TLine | VLine;
 
@@ -344,6 +362,163 @@ export default function StockChart({ symbol, currentPrice }: StockChartProps) {
 
   const nextChartType = chartType === "line" ? "candlestick" : "line";
 
+  // ---- Persistence: drawings live in the DB and survive reloads -------------
+  const { data: savedDrawings } = useQuery<DrawingRow[]>({
+    queryKey: ["/api/drawings", symbol],
+    queryFn: () => fetchDrawings(symbol),
+    enabled: !!symbol,
+  });
+  const hydratedSymbolRef = useRef<string | null>(null);
+  const invalidateDrawings = () =>
+    queryClient.invalidateQueries({ queryKey: ["/api/drawings", symbol] });
+  const invalidateAlerts = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
+    queryClient.invalidateQueries({ queryKey: [`/api/alerts/${symbol}`] });
+  };
+
+  // DB row → local drawing (times are canonical; indexes derive from the series).
+  const rowToLocal = (row: DrawingRow): Drawing | null => {
+    if (row.kind === "horizontal") {
+      const price = row.aPrice ?? row.bPrice;
+      if (price == null) return null;
+      return {
+        id: uid(),
+        kind: "horizontal",
+        price,
+        armed: row.alertId != null,
+        alertId: row.alertId ?? undefined,
+        dbId: row.id,
+      };
+    }
+    if (row.kind === "vertical") {
+      if (row.aTime == null) return null;
+      const time = new Date(row.aTime).getTime();
+      return { id: uid(), kind: "vertical", index: timeToIndex(time, timestamps), time, dbId: row.id };
+    }
+    if (row.aTime == null || row.aPrice == null || row.bTime == null || row.bPrice == null) return null;
+    const ta = new Date(row.aTime).getTime();
+    const tb = new Date(row.bTime).getTime();
+    return {
+      id: uid(),
+      kind: "trend",
+      a: { index: timeToIndex(ta, timestamps), price: row.aPrice },
+      b: { index: timeToIndex(tb, timestamps), price: row.bPrice },
+      times: { a: ta, b: tb },
+      armed: row.alertId != null,
+      alertId: row.alertId ?? undefined,
+      dbId: row.id,
+    };
+  };
+
+  // Local drawing → anchor payload (prices rounded, times as ISO strings).
+  const anchorsPayloadFor = (d: Drawing): DrawingAnchorsPayload => {
+    const iso = (ms: number) => new Date(ms).toISOString();
+    if (d.kind === "horizontal") {
+      const price = Number(d.price.toFixed(4));
+      return {
+        aTime: iso(timestamps[0] ?? Date.now()),
+        aPrice: price,
+        bTime: iso(timestamps[n - 1] ?? Date.now()),
+        bPrice: price,
+      };
+    }
+    if (d.kind === "vertical") {
+      return { aTime: iso(d.time ?? indexToTime(d.index, timestamps)) };
+    }
+    return {
+      aTime: iso(d.times?.a ?? indexToTime(d.a.index, timestamps)),
+      aPrice: Number(d.a.price.toFixed(4)),
+      bTime: iso(d.times?.b ?? indexToTime(d.b.index, timestamps)),
+      bPrice: Number(d.b.price.toFixed(4)),
+    };
+  };
+
+  // Refresh a drawing's canonical times from its (just-moved) indexes.
+  const withFreshTimes = (d: Drawing): Drawing => {
+    if (d.kind === "trend") {
+      return {
+        ...d,
+        times: { a: indexToTime(d.a.index, timestamps), b: indexToTime(d.b.index, timestamps) },
+      };
+    }
+    if (d.kind === "vertical") return { ...d, time: indexToTime(d.index, timestamps) };
+    return d;
+  };
+
+  // Reset local drawings when the symbol changes; they re-hydrate from the DB.
+  useEffect(() => {
+    setDrawings([]);
+    hydratedSymbolRef.current = null;
+    setDrawMode(null);
+    setPendingAnchor(null);
+    setHover(null);
+    setActiveDrawingId(null);
+  }, [symbol]);
+
+  // Hydrate once per symbol, as soon as both the rows and the series are ready.
+  useEffect(() => {
+    if (!savedDrawings || n === 0) return;
+    if (hydratedSymbolRef.current === symbol) return;
+    hydratedSymbolRef.current = symbol;
+    setDrawings(savedDrawings.map(rowToLocal).filter((d): d is Drawing => d !== null));
+  }, [savedDrawings, n, symbol]);
+
+  // When the loaded series changes (timeframe switch), recompute the indexes of
+  // time-anchored drawings so they stay pinned to their instants.
+  const seriesKey = n > 0 ? `${symbol}|${selectedTimeframe}|${timestamps[0]}|${timestamps[n - 1]}|${n}` : symbol;
+  useEffect(() => {
+    if (n === 0) return;
+    setDrawings((prev) =>
+      prev.map((d) => {
+        if (d.kind === "trend" && d.times) {
+          return {
+            ...d,
+            a: { index: timeToIndex(d.times.a, timestamps), price: d.a.price },
+            b: { index: timeToIndex(d.times.b, timestamps), price: d.b.price },
+          };
+        }
+        if (d.kind === "vertical" && d.time != null) {
+          return { ...d, index: timeToIndex(d.time, timestamps) };
+        }
+        return d;
+      }),
+    );
+  }, [seriesKey]);
+
+  // Save a freshly drawn line; on success remember its DB id on the local copy.
+  const persistNew = async (drawing: Drawing) => {
+    try {
+      const created = await apiCreateDrawing({ symbol, kind: drawing.kind, ...anchorsPayloadFor(drawing) });
+      if (created?.id) {
+        setDrawings((prev) => prev.map((d) => (d.id === drawing.id ? { ...d, dbId: created.id } : d)));
+        invalidateDrawings();
+      }
+    } catch {
+      toast({
+        title: "Linea non salvata",
+        description: "La linea resta visibile ma non è stata salvata sul server.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Push moved/edited anchors; the SERVER re-projects the linked alert (single
+  // source of truth). Falls back to the client-side alert sync when the line
+  // was never persisted.
+  const persistAnchors = async (drawing: Drawing) => {
+    if (!drawing.dbId) {
+      syncAlertFor(drawing);
+      return;
+    }
+    try {
+      await apiUpdateDrawing(drawing.dbId, anchorsPayloadFor(drawing));
+      invalidateDrawings();
+      if (drawing.kind !== "vertical" && drawing.alertId) invalidateAlerts();
+    } catch {
+      /* non-fatal: the daily server reprojection will catch up */
+    }
+  };
+
   // Sound alert: when the current price crosses/touches an armed line, beep.
   useEffect(() => {
     const cur = currentPrice ?? null;
@@ -406,14 +581,18 @@ export default function StockChart({ symbol, currentPrice }: StockChartProps) {
   const removeDrawing = async (id: string) => {
     const target = drawings.find((d) => d.id === id);
     setDrawings((prev) => prev.filter((d) => d.id !== id));
-    if (target && target.kind !== "vertical" && target.alertId) {
-      try {
+    if (!target) return;
+    try {
+      if (target.dbId) {
+        // The server deletes the linked alert together with the drawing.
+        await apiDeleteDrawing(target.dbId);
+        invalidateDrawings();
+      } else if (target.kind !== "vertical" && target.alertId) {
         await apiRequest("DELETE", `/api/alerts/${target.alertId}`, undefined);
-        queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
-        queryClient.invalidateQueries({ queryKey: [`/api/alerts/${symbol}`] });
-      } catch {
-        /* non-fatal */
       }
+      if (target.kind !== "vertical" && target.alertId) invalidateAlerts();
+    } catch {
+      /* non-fatal */
     }
   };
 
@@ -431,9 +610,10 @@ export default function StockChart({ symbol, currentPrice }: StockChartProps) {
       setDrawings((prev) => prev.map((d) => (d.id === id ? { ...d, armed: false, alertId: undefined } : d)));
       if (target.alertId) {
         try {
+          // Deleting the alert also disarms the persisted drawing (FK set null).
           await apiRequest("DELETE", `/api/alerts/${target.alertId}`, undefined);
-          queryClient.invalidateQueries({ queryKey: ["/api/alerts"] });
-          queryClient.invalidateQueries({ queryKey: [`/api/alerts/${symbol}`] });
+          invalidateAlerts();
+          invalidateDrawings();
         } catch {
           /* non-fatal */
         }
@@ -443,6 +623,17 @@ export default function StockChart({ symbol, currentPrice }: StockChartProps) {
       const alertId = await createAlertFor(target);
       if (alertId) {
         setDrawings((prev) => prev.map((d) => (d.id === id ? { ...d, alertId } : d)));
+        if (target.dbId) {
+          try {
+            // Link the alert to the drawing; the server re-projects the target
+            // from the time anchors right away.
+            await apiUpdateDrawing(target.dbId, { alertId });
+            invalidateDrawings();
+            invalidateAlerts();
+          } catch {
+            /* non-fatal */
+          }
+        }
       }
     }
     pokeDrawing(id);
@@ -475,23 +666,42 @@ export default function StockChart({ symbol, currentPrice }: StockChartProps) {
     const anchor = pointerToAnchor(clientX, clientY);
     if (!anchor) return;
     if (drawMode === "horizontal") {
-      addDrawing({ id: uid(), kind: "horizontal", price: anchor.price });
+      const line: HLine = { id: uid(), kind: "horizontal", price: anchor.price };
+      addDrawing(line);
+      persistNew(line);
       setDrawMode(null);
       setHover(null);
     } else if (drawMode === "vertical") {
-      addDrawing({ id: uid(), kind: "vertical", index: anchor.index });
+      const line: VLine = {
+        id: uid(),
+        kind: "vertical",
+        index: anchor.index,
+        time: indexToTime(anchor.index, timestamps),
+      };
+      addDrawing(line);
+      persistNew(line);
       setDrawMode(null);
       setHover(null);
     } else if (drawMode === "trend") {
       if (!pendingAnchor) {
         setPendingAnchor(anchor);
       } else {
-        const id = uid();
-        addDrawing({ id, kind: "trend", a: pendingAnchor, b: anchor });
+        const line: TLine = {
+          id: uid(),
+          kind: "trend",
+          a: pendingAnchor,
+          b: anchor,
+          times: {
+            a: indexToTime(pendingAnchor.index, timestamps),
+            b: indexToTime(anchor.index, timestamps),
+          },
+        };
+        addDrawing(line);
+        persistNew(line);
         setPendingAnchor(null);
         setHover(null);
         setDrawMode(null);
-        pokeDrawing(id); // show dots briefly on the freshly drawn line
+        pokeDrawing(line.id); // show dots briefly on the freshly drawn line
       }
     }
   };
@@ -515,8 +725,14 @@ export default function StockChart({ symbol, currentPrice }: StockChartProps) {
     };
     const onUp = () => {
       const moved = drawings.find((d) => d.id === drag.id);
-      if (moved) syncAlertFor(moved);
-      if (moved) pokeDrawing(moved.id); // keep controls alive briefly after drag
+      if (moved) {
+        // Refresh the canonical time anchors from the moved indexes, then let
+        // the server persist them and re-project the linked alert.
+        const fresh = withFreshTimes(moved);
+        setDrawings((prev) => prev.map((d) => (d.id === fresh.id ? fresh : d)));
+        persistAnchors(fresh);
+        pokeDrawing(fresh.id); // keep controls alive briefly after drag
+      }
       setDrag(null);
     };
     window.addEventListener("pointermove", onMove);
@@ -769,7 +985,7 @@ export default function StockChart({ symbol, currentPrice }: StockChartProps) {
                           if (v != null) setHorizontalPrice(d.id, v);
                           const line = drawings.find((x) => x.id === d.id);
                           if (line && line.kind === "horizontal") {
-                            syncAlertFor({ ...line, price: v ?? line.price });
+                            persistAnchors({ ...line, price: v ?? line.price });
                           }
                           pokeDrawing(d.id);
                         }}

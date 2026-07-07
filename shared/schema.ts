@@ -42,6 +42,28 @@ export const alerts = pgTable("alerts", {
   triggeredAt: timestamp("triggered_at"),
 });
 
+// Persistent chart drawings (every drawn line survives reloads, armed or not).
+// Uniform two-anchor model: each anchor is an instant + a price, so the server
+// can re-project a trend line over time without knowing the chart.
+//   - horizontal: two anchors with the same price (the level).
+//   - trend: two full anchors; the line through them, extrapolated in TIME.
+//   - vertical: only aTime (a date marker); prices stay null, never armable.
+// A drawing is "armed" iff alertId is set; deleting the alert disarms it
+// (FK on delete: set null). The alert row itself stays the single static
+// targetPrice the scheduler checks — the daily reprojector keeps it fresh.
+export const drawings = pgTable("drawings", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
+  symbol: text("symbol").notNull(),
+  kind: text("kind").notNull(), // 'horizontal' | 'trend' | 'vertical'
+  aTime: timestamp("a_time"),
+  aPrice: real("a_price"),
+  bTime: timestamp("b_time"),
+  bPrice: real("b_price"),
+  alertId: integer("alert_id").references(() => alerts.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Zod schemas
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
@@ -68,6 +90,43 @@ export const insertAlertSchema = createInsertSchema(alerts).pick({
   alertType: true,
 });
 
+// Anchor times arrive from the client as ISO strings (JSON) → coerce to Date.
+const drawingFieldsSchema = createInsertSchema(drawings, {
+  kind: z.enum(["horizontal", "trend", "vertical"]),
+  aTime: z.coerce.date().nullish(),
+  bTime: z.coerce.date().nullish(),
+}).pick({
+  userId: true,
+  symbol: true,
+  kind: true,
+  aTime: true,
+  aPrice: true,
+  bTime: true,
+  bPrice: true,
+});
+
+export const insertDrawingSchema = drawingFieldsSchema.superRefine((d, ctx) => {
+  if (d.kind === "vertical") {
+    if (d.aTime == null) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "vertical drawing requires aTime" });
+    }
+  } else if (d.aTime == null || d.aPrice == null || d.bTime == null || d.bPrice == null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `${d.kind} drawing requires both anchors (aTime/aPrice/bTime/bPrice)`,
+    });
+  }
+});
+
+// Updatable fields: anchors (drag/edit) and the alert linkage (arm/disarm).
+export const updateDrawingSchema = z.object({
+  aTime: z.coerce.date().optional(),
+  aPrice: z.number().optional(),
+  bTime: z.coerce.date().optional(),
+  bPrice: z.number().optional(),
+  alertId: z.number().int().nullable().optional(),
+});
+
 // Types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -80,6 +139,10 @@ export type InsertWatchlistItem = z.infer<typeof insertWatchlistItemSchema>;
 
 export type Alert = typeof alerts.$inferSelect;
 export type InsertAlert = z.infer<typeof insertAlertSchema>;
+
+export type ChartDrawing = typeof drawings.$inferSelect;
+export type InsertDrawing = z.infer<typeof insertDrawingSchema>;
+export type UpdateDrawing = z.infer<typeof updateDrawingSchema>;
 
 // API Types
 export interface StockSearchResult {

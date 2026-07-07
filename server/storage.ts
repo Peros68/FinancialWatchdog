@@ -1,9 +1,10 @@
 import {
-  users, watchlists, watchlistItems, alerts,
+  users, watchlists, watchlistItems, alerts, drawings,
   type User, type InsertUser,
   type Watchlist, type InsertWatchlist,
   type WatchlistItem, type InsertWatchlistItem,
-  type Alert, type InsertAlert
+  type Alert, type InsertAlert,
+  type ChartDrawing, type InsertDrawing
 } from "@shared/schema";
 
 export interface IStorage {
@@ -32,6 +33,15 @@ export interface IStorage {
   createAlert(alert: InsertAlert): Promise<Alert>;
   updateAlert(id: number, updates: Partial<Alert>): Promise<Alert | undefined>;
   deleteAlert(id: number): Promise<void>;
+
+  // Chart drawing operations (persistent lines; armed ⇔ alertId set)
+  getDrawings(userId: number, symbol?: string): Promise<ChartDrawing[]>;
+  getDrawing(id: number): Promise<ChartDrawing | undefined>;
+  createDrawing(drawing: InsertDrawing): Promise<ChartDrawing>;
+  updateDrawing(id: number, updates: Partial<ChartDrawing>): Promise<ChartDrawing | undefined>;
+  deleteDrawing(id: number): Promise<void>;
+  /** Drawings linked to an alert (candidates for the daily reprojection). */
+  getArmedDrawings(): Promise<ChartDrawing[]>;
 }
 
 export class MemStorage implements IStorage {
@@ -39,20 +49,24 @@ export class MemStorage implements IStorage {
   private watchlists: Map<number, Watchlist>;
   private watchlistItems: Map<number, WatchlistItem>;
   private alerts: Map<number, Alert>;
+  private drawings: Map<number, ChartDrawing>;
   private currentUserId: number;
   private currentWatchlistId: number;
   private currentWatchlistItemId: number;
   private currentAlertId: number;
+  private currentDrawingId: number;
 
   constructor() {
     this.users = new Map();
     this.watchlists = new Map();
     this.watchlistItems = new Map();
     this.alerts = new Map();
+    this.drawings = new Map();
     this.currentUserId = 1;
     this.currentWatchlistId = 1;
     this.currentWatchlistItemId = 1;
     this.currentAlertId = 1;
+    this.currentDrawingId = 1;
 
     // Create default user and watchlists
     this.initializeDefaultData();
@@ -178,11 +192,62 @@ export class MemStorage implements IStorage {
 
   async deleteAlert(id: number): Promise<void> {
     this.alerts.delete(id);
+    // Mirror the DB's FK "on delete: set null": deleting an alert disarms
+    // any drawing that referenced it.
+    Array.from(this.drawings.entries()).forEach(([drawingId, drawing]) => {
+      if (drawing.alertId === id) {
+        this.drawings.set(drawingId, { ...drawing, alertId: null });
+      }
+    });
+  }
+
+  async getDrawings(userId: number, symbol?: string): Promise<ChartDrawing[]> {
+    return Array.from(this.drawings.values()).filter(
+      d => d.userId === userId && (symbol === undefined || d.symbol === symbol)
+    );
+  }
+
+  async getDrawing(id: number): Promise<ChartDrawing | undefined> {
+    return this.drawings.get(id);
+  }
+
+  async createDrawing(insertDrawing: InsertDrawing): Promise<ChartDrawing> {
+    const id = this.currentDrawingId++;
+    const drawing: ChartDrawing = {
+      ...insertDrawing,
+      id,
+      userId: insertDrawing.userId ?? null,
+      aTime: insertDrawing.aTime ?? null,
+      aPrice: insertDrawing.aPrice ?? null,
+      bTime: insertDrawing.bTime ?? null,
+      bPrice: insertDrawing.bPrice ?? null,
+      alertId: null,
+      createdAt: new Date(),
+    };
+    this.drawings.set(id, drawing);
+    return drawing;
+  }
+
+  async updateDrawing(id: number, updates: Partial<ChartDrawing>): Promise<ChartDrawing | undefined> {
+    const drawing = this.drawings.get(id);
+    if (!drawing) return undefined;
+
+    const updated = { ...drawing, ...updates };
+    this.drawings.set(id, updated);
+    return updated;
+  }
+
+  async deleteDrawing(id: number): Promise<void> {
+    this.drawings.delete(id);
+  }
+
+  async getArmedDrawings(): Promise<ChartDrawing[]> {
+    return Array.from(this.drawings.values()).filter(d => d.alertId != null);
   }
 }
 
 import { db } from "./db";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, isNotNull } from "drizzle-orm";
 
 export class DatabaseStorage implements IStorage {
   async getUser(id: number): Promise<User | undefined> {
@@ -287,7 +352,45 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteAlert(id: number): Promise<void> {
+    // drawings.alertId has ON DELETE SET NULL: the DB disarms linked drawings.
     await db.delete(alerts).where(eq(alerts.id, id));
+  }
+
+  async getDrawings(userId: number, symbol?: string): Promise<ChartDrawing[]> {
+    const bySymbol = symbol === undefined
+      ? eq(drawings.userId, userId)
+      : and(eq(drawings.userId, userId), eq(drawings.symbol, symbol));
+    return await db.select().from(drawings).where(bySymbol);
+  }
+
+  async getDrawing(id: number): Promise<ChartDrawing | undefined> {
+    const [drawing] = await db.select().from(drawings).where(eq(drawings.id, id));
+    return drawing || undefined;
+  }
+
+  async createDrawing(insertDrawing: InsertDrawing): Promise<ChartDrawing> {
+    const [drawing] = await db
+      .insert(drawings)
+      .values(insertDrawing)
+      .returning();
+    return drawing;
+  }
+
+  async updateDrawing(id: number, updates: Partial<ChartDrawing>): Promise<ChartDrawing | undefined> {
+    const [drawing] = await db
+      .update(drawings)
+      .set(updates)
+      .where(eq(drawings.id, id))
+      .returning();
+    return drawing || undefined;
+  }
+
+  async deleteDrawing(id: number): Promise<void> {
+    await db.delete(drawings).where(eq(drawings.id, id));
+  }
+
+  async getArmedDrawings(): Promise<ChartDrawing[]> {
+    return await db.select().from(drawings).where(isNotNull(drawings.alertId));
   }
 }
 

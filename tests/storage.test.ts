@@ -77,3 +77,60 @@ describe("MemStorage — alerts", () => {
     expect(ids).toEqual([eligible.id, otherUser.id].sort());
   });
 });
+
+describe("MemStorage — drawings", () => {
+  const t0 = new Date("2026-07-01T00:00:00Z");
+  const t1 = new Date("2026-07-02T00:00:00Z");
+
+  it("creates, lists (per symbol), updates and deletes drawings", async () => {
+    const storage = new MemStorage();
+    const user = await storage.createUser({ username: "d1", password: "p" });
+
+    const trend = await storage.createDrawing({
+      userId: user.id,
+      symbol: "AAPL",
+      kind: "trend",
+      aTime: t0,
+      aPrice: 100,
+      bTime: t1,
+      bPrice: 110,
+    });
+    expect(trend.id).toBeGreaterThan(0);
+    expect(trend.alertId).toBeNull();
+
+    await storage.createDrawing({ userId: user.id, symbol: "MSFT", kind: "vertical", aTime: t0 });
+
+    expect(await storage.getDrawings(user.id)).toHaveLength(2);
+    expect(await storage.getDrawings(user.id, "AAPL")).toHaveLength(1);
+
+    const updated = await storage.updateDrawing(trend.id, { aPrice: 105 });
+    expect(updated?.aPrice).toBe(105);
+
+    await storage.deleteDrawing(trend.id);
+    expect(await storage.getDrawing(trend.id)).toBeUndefined();
+  });
+
+  it("getArmedDrawings returns linked drawings; deleting the alert disarms them", async () => {
+    const storage = new MemStorage();
+    const user = await storage.createUser({ username: "d2", password: "p" });
+    const alert = await storage.createAlert({ userId: user.id, symbol: "AAPL", targetPrice: 1, alertType: "above" });
+    const drawing = await storage.createDrawing({
+      userId: user.id,
+      symbol: "AAPL",
+      kind: "horizontal",
+      aTime: t0,
+      aPrice: 1,
+      bTime: t1,
+      bPrice: 1,
+    });
+    expect(await storage.getArmedDrawings()).toHaveLength(0);
+
+    await storage.updateDrawing(drawing.id, { alertId: alert.id });
+    expect((await storage.getArmedDrawings()).map((d) => d.id)).toEqual([drawing.id]);
+
+    // FK parity: deleting the alert sets the drawing's alertId to null.
+    await storage.deleteAlert(alert.id);
+    expect(await storage.getArmedDrawings()).toHaveLength(0);
+    expect((await storage.getDrawing(drawing.id))?.alertId).toBeNull();
+  });
+});

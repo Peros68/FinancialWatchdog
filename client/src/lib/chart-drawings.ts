@@ -78,3 +78,55 @@ export function alertPriceFor(drawing: Drawing, n: number): number {
 export function alertTypeFor(targetPrice: number, currentPrice: number): "above" | "below" {
   return targetPrice >= currentPrice ? "above" : "below";
 }
+
+// ---- Time ⇄ index conversion (persistence) ----------------------------------
+// Drawings are persisted with TIME anchors (epoch ms) so they are independent of
+// the loaded timeframe; on screen they live as fractional indexes into the
+// current series. `timestamps` is the ascending series of the loaded chart.
+// Outside the loaded window both functions extrapolate linearly using the
+// median bar interval (robust against gaps like weekends).
+
+function medianStep(timestamps: number[]): number {
+  const diffs: number[] = [];
+  for (let i = 1; i < timestamps.length; i++) diffs.push(timestamps[i] - timestamps[i - 1]);
+  if (diffs.length === 0) return 0;
+  diffs.sort((x, y) => x - y);
+  return diffs[Math.floor(diffs.length / 2)];
+}
+
+/** Fractional index of an instant within the series (extrapolates outside it). */
+export function timeToIndex(timeMs: number, timestamps: number[]): number {
+  const n = timestamps.length;
+  if (n === 0) return 0;
+  if (n === 1) return 0;
+  const step = medianStep(timestamps);
+  if (timeMs <= timestamps[0]) {
+    return step > 0 ? (timeMs - timestamps[0]) / step : 0;
+  }
+  if (timeMs >= timestamps[n - 1]) {
+    return n - 1 + (step > 0 ? (timeMs - timestamps[n - 1]) / step : 0);
+  }
+  let lo = 0;
+  let hi = n - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (timestamps[mid] <= timeMs) lo = mid;
+    else hi = mid;
+  }
+  const span = timestamps[hi] - timestamps[lo];
+  const frac = span > 0 ? (timeMs - timestamps[lo]) / span : 0;
+  return lo + frac;
+}
+
+/** Inverse of timeToIndex: instant (epoch ms) for a fractional index. */
+export function indexToTime(index: number, timestamps: number[]): number {
+  const n = timestamps.length;
+  if (n === 0) return 0;
+  if (n === 1) return timestamps[0];
+  const step = medianStep(timestamps);
+  if (index <= 0) return timestamps[0] + index * step;
+  if (index >= n - 1) return timestamps[n - 1] + (index - (n - 1)) * step;
+  const lo = Math.floor(index);
+  const hi = lo + 1;
+  return timestamps[lo] + (index - lo) * (timestamps[hi] - timestamps[lo]);
+}

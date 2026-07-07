@@ -3,6 +3,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { createAlertScheduler } from "./alertScheduler";
+import { startDailyReprojector } from "./alertReprojector";
 import { storage } from "./storage";
 import { marketData } from "./marketData";
 
@@ -95,6 +96,9 @@ app.use((req, res, next) => {
       intervalMs,
     );
     scheduler.start();
+    // Daily at 08:00 Italy: re-project trend-line alerts to "now" so the
+    // scheduler above always checks against a fresh target.
+    startDailyReprojector({ storage, getQuote: (symbol) => marketData.quote(symbol), log });
   } else {
     log("[alerts] server-side monitoring disabled (ALERT_CHECK_INTERVAL_MS)");
   }
