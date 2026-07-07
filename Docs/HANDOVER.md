@@ -3,14 +3,20 @@
 > Documento di ripresa sessione. Leggere PRIMA di riprendere, insieme a
 > `PROJECT_STATUS.md`, `CHANGELOG_DECISIONS.md`, `WORK_LOG.md`, `memory/MEMORY.md`.
 
-**Chiusura sessione:** 2026-06-21
-**Stato qualità:** `npm run check` 0 · `npm run lint` 0 · `npm test` **31/31** · `npm run build` OK.
+**Ultimo aggiornamento:** 2026-07-06
+**Stato qualità:** `npm run check` 0 · `npm run lint` 0 · `npm test` **89/89** · `npm run build` OK.
+**GATE CHIUSO (2026-07-06):** `npm run db:push` eseguito su conferma utente (Docker Desktop e
+container `finwatch-postgres` avviati prima del push; DATABASE_URL passato inline). Output
+drizzle-kit: "Changes applied" → tabella `drawings` creata secondo l'output drizzle (nessuna
+verifica diretta ulteriore, su indicazione utente).
 
 ## 1. Stato in una riga
-App "FinAlert" (React+Vite / Express+TS / Drizzle) stabilizzata e ampliata: storage in
-memoria (MemStorage), dati di mercato **provider-agnostic** (Yahoo default, Finnhub
-opzionale), schermate principali funzionanti, monitoraggio alert v1, dati fondamentali.
-**Funziona anche senza chiavi**; con `FINNHUB_API_KEY` arricchisce i fondamentali.
+App "FinAlert" (React+Vite / Express+TS / Drizzle) stabilizzata e ampliata: **storage
+persistente su PostgreSQL locale** (Docker) quando `DATABASE_URL` è presente, altrimenti
+MemStorage; dati di mercato **provider-agnostic** (Yahoo default, Finnhub opzionale),
+schermate principali funzionanti, monitoraggio alert v1, dati fondamentali, grafico avanzato
+(candele/area, strumenti di disegno + alert). **Funziona anche senza chiavi**; con
+`FINNHUB_API_KEY` arricchisce i fondamentali.
 
 ## 2. Come avviare e verificare
 ```
@@ -29,13 +35,21 @@ npm run build      # build client + bundle server
 
 ## 3. Architettura attuale (sintesi)
 - **Storage**: `server/storage.ts` factory `createStorage()` → `MemStorage` senza
-  `DATABASE_URL`, `DatabaseStorage` (Postgres, **non attiva**) se presente. Dati volatili.
+  `DATABASE_URL`, `DatabaseStorage` (**PostgreSQL, ATTIVA e verificata** — 2026-07-05) se
+  presente. Driver **node-postgres** (`pg`) in `server/db.ts`; DB locale via `docker-compose.yml`
+  (`postgres:16-alpine`, porta 5432). Schema con `onDelete: cascade`, `alerts.triggeredAt`,
+  `watchlist_items.currency/createdAt` + unique `(watchlist_id, symbol)`. Seed idempotente
+  `server/seed.ts` (`npm run db:seed`). CRUD/cascade/persistenza verificati via API + `psql`.
 - **Market data**: `server/marketData/` (`types`, `yahooProvider`, `finnhubProvider`, `index`
   facade) + `server/settings.ts`. Route `/api/stocks/{search,quote,profile,chart,fundamentals}`
   delegano al facade; preferenza provider da `GET/PUT /api/settings` (pagina `/settings`).
   Chiavi solo server-side. `toTradingViewSymbol` = utility pura non cablata.
-- **Alert**: backend locale `/api/alerts` (MemStorage); pagina Alerts con monitoraggio v1
-  client-side (polling 30s, evidenza visiva + beep). Nessuno scheduler/notifica server-side.
+- **Alert**: backend locale `/api/alerts`; pagina Alerts con monitoraggio v1 client-side
+  (polling 30s, evidenza visiva + beep). **Fase 2 server-side (2026-07-06)**: scheduler
+  `server/alertScheduler.ts` avviato da `index.ts` (default 60s, `ALERT_CHECK_INTERVAL_MS`
+  per override/disable) — legge `getActiveAlerts()` (isActive ∧ triggeredAt NULL), 1 quote
+  per simbolo via facade, salva `triggeredAt` (one-shot; riarmo = azzerare triggeredAt).
+  Nessuna notifica push (fuori scope).
 - **Frontend**: pagine Search, Stock Detail (+ Dati fondamentali), Watchlist (crea/elimina/
   rimuovi item), Alerts, Settings, NotFound.
 
@@ -49,23 +63,33 @@ npm run build      # build client + bundle server
   parte (le occorrenze "finnhub" in `settings.tsx` sono `finnhubAvailable`). Verde dopo rimozione.
 
 ## 5. Decisioni aperte (richiedono l'utente)
-- **PostgreSQL (D1/D4)** — prossimo grande incremento (vedi §6).
+- ~~**PostgreSQL (D1/D4)**~~ — **FATTO 2026-07-05** (attivato e verificato, vedi §6).
+- **Monitoraggio alert fase 2** — scheduler + `triggeredAt` **FATTI (2026-07-06)**; resta la
+  logica di notifica (fuori scope). **Modello C DECISO e IMPLEMENTATO (2026-07-06)**: tutti i
+  drawings persistenti in tabella `drawings` (2 ancore tempo+prezzo; armato ⇔ `alertId`);
+  ri-proiezione dinamica server-side giornaliera alle **08:00 Europe/Rome** + immediata su
+  PUT del drawing + catch-up allo start (`server/alertReprojector.ts`).
+  `db:push` **ESEGUITO** (2026-07-06): tabella `drawings` creata secondo l'output drizzle
+  ("Changes applied").
 - **Statements fondamentali** (conto economico/stato patrimoniale/cash flow): fuori scope
   (crumb Yahoo fragile o tier Finnhub a pagamento) — decisione separata.
-- **Monitoraggio alert fase 2** (server-side: scheduler + `triggered_at` + notifica): richiede schema.
 - **Rename watchlist**: richiede nuova API.
 - **Widget TradingView**: non integrato (solo util di conversione simboli).
-- **Commit/versionamento** del lavoro non committato.
+- **Deploy cloud (D4)**: non fatto (solo locale). `@neondatabase/serverless` resta pronto per Neon.
+- **`.env.example`**: aggiungere a mano il blocco Docker `DATABASE_URL` (i tool file sono
+  bloccati dal guard sui pattern `.env`).
+- **Commit/versionamento** del lavoro non committato (blocco PostgreSQL incluso).
 
-## 6. Prossimo incremento consigliato — PostgreSQL locale (D1/D4)
-Passi (da concordare; comportano stop-condition: nuova dep driver + modifica schema):
-1. Provisioning Postgres locale + `DATABASE_URL` in `.env` (la factory passa a `DatabaseStorage`).
-2. Driver: valutare `pg` + `drizzle-orm/node-postgres` (l'attuale `@neondatabase/serverless` è cloud)
-   → **nuova dipendenza** da approvare.
-3. `npm run db:push` + eventuale adeguamento schema (mancano `currency`/`created_at` su items,
-   `triggered_at` su alerts, unique `(watchlist_id, symbol)`) → **modifica schema** da approvare.
-4. Script di seed idempotente (utente demo + watchlist) — `DatabaseStorage` non semina come MemStorage.
-5. Verifica percorso `DatabaseStorage` (incluso cascade in `deleteWatchlist`).
+## 6. PostgreSQL locale (D1/D4) — FATTO (2026-07-05)
+Attivato e verificato. Per usarlo:
+1. Avvia il DB: `docker compose up -d` (container `finwatch-postgres`, porta 5432).
+2. Metti in `.env`: `DATABASE_URL=postgres://finwatch:finwatch@localhost:5432/finwatch`.
+3. (Prima volta / DB nuovo) `npm run db:push` poi `npm run db:seed`.
+4. `npm run dev` → l'app usa `DatabaseStorage`. URL: http://localhost:5000.
+- **Gestione dati**: `docker compose down` ferma mantenendo il volume `finwatch-pgdata`;
+  `down -v` **cancella** i dati.
+- **Verificato**: selezione DatabaseStorage, lettura da Postgres, CRUD, cascade su
+  `deleteWatchlist`, persistenza, idempotenza del seed.
 
 ## 7. Vincoli/preferenze operative (da rispettare)
 - Lavorare solo nel workspace `C:\AI-LAB\FinancialWatchdog`. **Non** accedere a `~/.claude`

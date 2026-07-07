@@ -2,6 +2,141 @@
 
 Registro cronologico degli incrementi. Voce più recente in alto.
 
+## 2026-07-06 — Modello C: drawings persistenti + ri-proiezione alert 08:00 Italia
+
+**Tipo:** lavoro applicativo su decisione utente ("C piena": tutti i disegni persistenti nel DB,
+anche non armati; alert collegati via `alertId`; ricalcolo dinamico server-side alle 08:00
+Europe/Rome). **Schema esteso ma `db:push` NON eseguito** (in attesa di conferma utente):
+su Postgres la tabella `drawings` non esiste ancora; su MemStorage tutto già operativo.
+
+**Schema (`shared/schema.ts`):**
+- Nuova tabella `drawings`: `userId` (FK cascade), `symbol`, `kind` (`horizontal|trend|vertical`),
+  ancore `aTime/aPrice/bTime/bPrice` (2 punti tempo+prezzo; orizzontale = prezzi uguali;
+  verticale = solo `aTime`), `alertId` (FK su alerts, **on delete set null** = disarmo
+  automatico), `createdAt`. NESSUNA modifica alle tabelle esistenti.
+- `insertDrawingSchema` (kind enum, `z.coerce.date()` sulle ancore ISO, superRefine per-kind),
+  `updateDrawingSchema` (ancore + `alertId` nullable). Tipi `ChartDrawing/InsertDrawing/UpdateDrawing`.
+
+**Server:**
+- `storage.ts`: `getDrawings(userId, symbol?)`, `getDrawing`, `createDrawing`, `updateDrawing`,
+  `deleteDrawing`, `getArmedDrawings()` su Mem+Database. `MemStorage.deleteAlert` replica il
+  set-null della FK (parità di comportamento).
+- `alertReprojector.ts` (nuovo): `projectPriceAt(a,b,when)` pura (lineare NEL TEMPO, ancore
+  coincidenti → prezzo di A); `reprojectOnce(deps, only?)` — per ogni drawing armato con alert
+  attivo/non scattato ricalcola `targetPrice` a *adesso* e ri-deriva `alertType` da 1 quote per
+  simbolo (quote fallita → target aggiornato, direzione mantenuta); `msUntilNextHourInTz` pura
+  (Intl, DST-aware); `startDailyReprojector(deps, 8, "Europe/Rome")` con catch-up allo start e
+  catena setTimeout unref'd.
+- `routes.ts`: `GET /api/drawings/:symbol` · `POST /api/drawings` · `PUT /api/drawings/:id`
+  (se armato → ri-proiezione immediata dell'alert, best-effort) · `DELETE /api/drawings/:id`
+  (cancella anche l'alert collegato).
+- `index.ts`: `startDailyReprojector` accanto allo scheduler 60s (stesso gate
+  `ALERT_CHECK_INTERVAL_MS`).
+
+**Client:**
+- `chart-drawings.ts`: `timeToIndex`/`indexToTime` puri (interpolazione dentro la serie,
+  estrapolazione col passo MEDIANO fuori — robusto ai weekend).
+- `drawingsApi.ts` (nuovo): transport CRUD `/api/drawings` (`DrawingRow` wire type, tempi ISO).
+- `stock-chart.tsx`: hydration dal DB per simbolo (una volta, quando serie+righe pronte);
+  reset su cambio simbolo; re-indicizzazione su cambio timeframe (i disegni restano ancorati
+  ai loro ISTANTI); `persistNew` su creazione, `persistAnchors` su drag-end/commit prezzo
+  (il SERVER ri-proietta l'alert collegato = unica fonte di verità; `syncAlertFor` resta solo
+  come fallback per linee non persistite); `removeDrawing` → DELETE drawing (cascata alert);
+  campanella → POST alert + `PUT {alertId}` / DELETE alert (disarmo via FK). Tipi locali con
+  `dbId` + tempi canonici (`times`/`time`).
+
+**Test (`npm test` 63 → 89):** `alert-reprojector.test.ts` (13: proiezione, alertTypeFor,
+msUntilNextHourInTz estate/inverno/limite, reprojectOnce trigger/no-op/skip/quote-failure/dedup+only),
+`drawings-api.test.ts` (5: CRUD+validazioni per-kind, cascata delete, disarmo su delete alert),
+`chart-drawings.test.ts` (6: mapping tempo⇄indice incl. gap e round-trip), storage +2 (drawings CRUD,
+armed+set-null). Nei test API l'armamento avviene via storage per non colpire la rete.
+
+**Verifiche:** `npm run check` 0 · `npm run lint` 0 · `npm test` **89/89** · `npm run build` OK.
+
+**Prossimo passo (gate utente):** `npm run db:push` per creare la tabella `drawings` su Postgres.
+
+## 2026-07-06 — Alert fase 2 (server-side): scheduler + `triggeredAt` persistente
+
+**Tipo:** lavoro applicativo autonomo (D3 fase 2, richiesto dall'utente). Nessuna nuova
+dipendenza, nessuna modifica schema (la colonna `alerts.triggeredAt` esisteva già), no deploy,
+`.env` non toccato.
+
+**Codice:**
+- `server/storage.ts` — `IStorage.getActiveAlerts()`: alert con `isActive=true` e
+  `triggeredAt IS NULL`, di TUTTI gli utenti. Implementata in MemStorage (filter) e
+  DatabaseStorage (`and(eq(isActive,true), isNull(triggeredAt))`).
+- `server/alertScheduler.ts` (nuovo) —
+  - `shouldTrigger(alert, price)` pura, STESSA semantica del client v1
+    (`above`: price ≥ target · `below`: price ≤ target · mai su prezzo null/≤0/NaN o tipo ignoto);
+  - `checkAlertsOnce(deps)`: legge gli alert attivi, 1 quote per simbolo distinto (deduplicato),
+    salva `triggeredAt = now` sugli alert colpiti. Errori quote per-simbolo NON fatali (gli alert
+    restano eleggibili al giro dopo). `isActive` NON viene toccato (resta interruttore utente);
+    il trigger è one-shot perché il filtro esclude `triggeredAt` valorizzato. Per riarmare:
+    azzerare `triggeredAt` (PUT).
+  - `createAlertScheduler(deps, intervalMs)`: start/stop + `runOnce`, passate MAI sovrapposte
+    (tick saltato se una è in volo), timer `unref()` (non tiene vivo il processo), primo pass
+    immediato allo start. Dipendenze iniettate (`storage`, `getQuote`, `now`, `log`) → testabile.
+- `server/index.ts` — allo start del server: intervallo da `ALERT_CHECK_INTERVAL_MS`
+  (default 60 000 ms; valori <1000 o non numerici = disabilitato), `getQuote` = facade
+  `marketData.quote` (Yahoo default, funziona senza key).
+
+**Test (`npm test` 52 → 63):**
+- `tests/alert-scheduler.test.ts` (nuovo, 10): semantica `shouldTrigger` (4), `checkAlertsOnce`
+  (trigger+preservazione isActive, skip inattivi/già scattati senza quote, dedup 1 quota/simbolo,
+  quote fallita → alert riprovabile), scheduler (start/stop + primo pass, no-overlap).
+- `tests/storage.test.ts` +1: `getActiveAlerts` filtra inattivi/già scattati, include tutti gli utenti.
+
+**Verifiche:** `npm run check` 0 · `npm run lint` 0 · `npm test` **63/63** · `npm run build` OK.
+
+**Nota modello (da chiarire con l'utente, sessione in corso):** gli alert da trendline sono
+salvati come prezzo STATICO (proiezione sull'ultima colonna al momento dell'armamento/drag);
+lo scheduler non conosce la geometria della retta. Vedi decisione aperta in HANDOVER §5.
+
+## 2026-07-05 — PostgreSQL locale attivato (D1/D4): pg + Docker + schema arricchito + persistenza verificata
+
+**Tipo:** infrastruttura + schema DB (piano B approvato dall'utente). Stop-condition gestite:
+nuova dipendenza `pg`, avvio Postgres locale via Docker, `db:push` (creazione schema), seed.
+
+**Dipendenza (approvata):**
+- `+ pg ^8.13.1` (driver node-postgres) e `+ @types/pg ^8.11.10`. `@neondatabase/serverless`
+  RESTA per un futuro deploy Neon (D4). `npm install` eseguito.
+
+**Codice:**
+- `server/db.ts` — da `@neondatabase/serverless`/`neon-serverless` a **node-postgres**
+  (`pg.Pool` + `drizzle-orm/node-postgres`), inizializzazione lazy invariata. **Fix runtime**:
+  `pg` è CommonJS → sotto ESM il named import `{ Pool }` non è risolvibile a runtime
+  (tsc/vitest passavano perché non istanziano il DB); corretto in `import pg from "pg"; const { Pool } = pg;`.
+- `shared/schema.ts` — **schema arricchito**: `alerts.triggeredAt` (timestamp nullable, per
+  alert fase 2); `watchlist_items` + `currency` (nullable) + `createdAt` + unique
+  `watchlist_symbol_unique(watchlist_id, symbol)`; FK `watchlists/items/alerts` con
+  `onDelete: "cascade"`. `insertWatchlistItemSchema` include `currency` opzionale.
+- `server/storage.ts` — `MemStorage` adeguato ai nuovi tipi `$inferSelect` (`currency`/
+  `createdAt` su item, `triggeredAt: null` su alert): necessario per il type-check.
+- `server/seed.ts` (**nuovo**) — seed **idempotente**: utente `default` (id=1, usato da
+  `routes.ts` `defaultUserId`) + 3 watchlist demo; risolve il bug FK su DB vuoto. Script `db:seed`.
+- `docker-compose.yml` (**nuovo**) — `postgres:16-alpine`, porta 5432, credenziali
+  `finwatch/finwatch/finwatch`, volume `finwatch-pgdata`, healthcheck.
+
+**Attivazione e verifica LIVE:**
+- `docker compose up -d` → container `finwatch-postgres` healthy.
+- `db:push` → "Changes applied" (tabelle create). `db:seed` → utente + 3 watchlist;
+  **idempotenza** verificata (re-run → "already exists").
+- Fermato il vecchio dev server orfano su :5000 (pre-`.env`, MemStorage) e riavviata l'app →
+  boot log `[storage] DATABASE_URL detected — using DatabaseStorage (PostgreSQL)`; `/api/watchlists`
+  restituisce i 3 record con `createdAt` = ora del seed (non l'uptime) → **lettura da Postgres**.
+- **CRUD + cascade** (API live + `psql` diretto): create watchlist + 2 item + alert →
+  righe in Postgres (`watchlists=1/items=2/alerts=1`); DELETE watchlist → item spariti
+  (API `[]` e Postgres `0`) = **cascade OK**; cleanup alert; **zero residui**. Dati solo test.
+- **Persistenza confermata**: watchlist, item e alert sono ora persistenti su PostgreSQL.
+
+**DATABASE_URL (locale Docker):** `postgres://finwatch:finwatch@localhost:5432/finwatch`
+(inserito dall'utente in `.env`; passato inline ai comandi durante la verifica, mai stampato).
+
+**Esito:** `check` 0 · `test` **52/52** · `build` OK.
+
+**Rimasto:** `.env.example` blocco Docker (guard `.env`, da aggiungere a mano); alert fase 2
+(scheduler server-side + `triggered_at` già in schema); rename watchlist; deploy (D4).
+
 ## 2026-07-04 — Timeframe grafico: default 1 anno + scelte rapide 15min/1g/1s/1m/1a/5A
 
 **Tipo:** tweak frontend (`stock-chart.tsx`, no deps/schema).

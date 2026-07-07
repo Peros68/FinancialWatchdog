@@ -172,9 +172,44 @@ Finnhub + Yahoo proxy · porta 5000 (API + client serviti insieme).
     & alert (2026-07-05)" con tutte le funzionalità del grafico.
   - Qualità dopo rifiniture: check 0 · lint 0 · Vitest 52/52 · build OK.
 
+## Alert fase 2 server-side (2026-07-06, FATTO — modello in discussione)
+- `server/alertScheduler.ts`: `shouldTrigger` pura (semantica = client v1: above ≥, below ≤,
+  mai su prezzo null/≤0/NaN); `checkAlertsOnce` (1 quote/simbolo dedup, errori per-simbolo non
+  fatali, salva `triggeredAt=now`); `createAlertScheduler` (no-overlap, unref, primo pass allo
+  start). Avvio in `index.ts`: default 60s, `ALERT_CHECK_INTERVAL_MS` override (<1000 = off).
+- `IStorage.getActiveAlerts()` = isActive ∧ triggeredAt NULL, tutti gli utenti (Mem+Database).
+- `isActive` NON toccato dallo scheduler (interruttore utente); trigger one-shot via
+  triggeredAt; riarmo = azzerare triggeredAt con PUT.
+- Test: `tests/alert-scheduler.test.ts` (10) + storage +1 → 63/63. check/lint/build verdi.
+- **Vincolo sessione 2026-07-06 (utente):** auto-allow SOLO `npm run check/test/build/lint`;
+  NO db:push, db:seed, install, deploy senza conferma.
+
+## Modello C — drawings persistenti + reprojection (2026-07-06, DECISO utente e FATTO)
+- **Decisione utente:** C piena — TUTTI i disegni persistenti nel DB (anche non armati e
+  verticali); armato ⇔ `alertId` valorizzato; ricalcolo dinamico server-side alle 08:00 Italia.
+- Tabella `drawings` in shared/schema.ts: 2 ancore (aTime/aPrice/bTime/bPrice, orizzontale =
+  prezzi uguali, verticale = solo aTime), `alertId` FK **on delete set null** (= disarmo),
+  kind enum in `insertDrawingSchema` (z.coerce.date sulle ancore, superRefine per-kind).
+- `server/alertReprojector.ts`: `projectPriceAt` (lineare NEL TEMPO), `reprojectOnce(deps, only?)`
+  (target sempre riproiettato; alertType ri-derivato da 1 quote/simbolo, mantenuto se quote KO;
+  tocca solo alert attivi non scattati), `msUntilNextHourInTz` (Intl DST-aware),
+  `startDailyReprojector(deps, 8, "Europe/Rome")` + catch-up allo start. Avviato in index.ts.
+- Route `/api/drawings`: GET/:symbol, POST, PUT/:id (se armato → reprojection immediata),
+  DELETE/:id (cancella anche l'alert). PUT drawing = UNICA fonte di sync alert (il client non
+  fa più PUT /api/alerts sul drag; `syncAlertFor` resta fallback per linee senza dbId).
+- Client: `timeToIndex`/`indexToTime` in chart-drawings.ts (mediana dei passi per estrapolare
+  fuori serie); `drawingsApi.ts` transport; stock-chart.tsx = hydration per simbolo, reset su
+  cambio simbolo, re-index su cambio timeframe (ancore = ISTANTI), persist su crea/drag/commit,
+  campanella → POST alert + PUT {alertId}. Tipi locali con `dbId` e tempi canonici.
+- Test 63→89: alert-reprojector (13), drawings-api (5, armamento via storage per evitare rete),
+  chart-drawings (6), storage +2. Verde: check 0 · lint 0 · 89/89 · build OK.
+- **GATE APERTO: `npm run db:push` NON eseguito** (conferma utente richiesta). Senza push i
+  drawings funzionano solo su MemStorage; su Postgres la tabella non esiste ancora.
+
 ## Qualità
-ESLint 0 · Vitest 52/52 (health, storage, mapping+trigger, watchlist/alerts/settings API, marketData,
-fundamentals, candles, chart-axis) · check 0 · build ok.
+ESLint 0 · Vitest 89/89 (health, storage, mapping+trigger, alert-scheduler, alert-reprojector,
+watchlist/alerts/drawings API, marketData, fundamentals, candles, chart-axis, chart-drawings) ·
+check 0 · build ok.
 
 ## SESSIONE CHIUSA (2026-06-21)
 Per ripresa leggere `Docs/HANDOVER.md`. Verde: check 0 · lint 0 · test 31/31 · build OK.
@@ -219,6 +254,54 @@ locale + DATABASE_URL, valutare driver `pg`/node-postgres (nuova dep), db:push, 
 eventuale adeguamento schema. Rinviati anche: rename watchlist, fase 2 alert server-side, deploy.
 Dettaglio completo nel "Riepilogo finale" in `Docs/PROJECT_STATUS.md`.
 
+## PostgreSQL locale — Blocco B (2026-07-05, ATTIVATO E VERIFICATO)
+Piano B approvato dall'utente (pg + Postgres locale Docker + schema arricchito). Modifiche
+codice fatte E attivazione completata: Docker up, db:push, db:seed, verifica DatabaseStorage.
+- **Attivazione (2026-07-05):** `docker compose up -d` → container `finwatch-postgres`
+  (postgres:16-alpine, healthy, porta 5432); `db:push` → "Changes applied" (tabelle create);
+  `db:seed` → utente default id=1 + 3 watchlist. **Idempotenza verificata** (re-run: "already
+  exists"). **DatabaseStorage verificato**: log "[storage] DATABASE_URL detected", constructor
+  `DatabaseStorage`, `getWatchlists(1)` legge le 3 watchlist da Postgres.
+- **DATABASE_URL (locale Docker):** `postgres://finwatch:finwatch@localhost:5432/finwatch`.
+  Passato INLINE ai comandi (db:push/seed/verify), NON scritto in `.env` (l'utente lo inserisce).
+  Finché non è in `.env`, `npm run dev`/`npm start` restano su MemStorage.
+- **FIX runtime `server/db.ts`:** `pg` è CommonJS → sotto Node ESM il named import
+  `{ Pool }` NON è risolvibile a runtime (tsc/vitest passavano perché non istanziano il DB;
+  fallisce solo con DATABASE_URL reale). Corretto in `import pg from "pg"; const { Pool } = pg;`.
+- **Dipendenza:** aggiunta `pg` ^8.13.1 (+ `@types/pg` ^8.11.10); `@neondatabase/serverless`
+  RESTA in package.json per futuro Neon (D4). `npm install` eseguito (approvato).
+- **`server/db.ts`:** passato da neon-serverless a **node-postgres** (`Pool` da `pg` +
+  `drizzle-orm/node-postgres`), inizializzazione lazy invariata (proxy `pool`/`db`).
+- **`shared/schema.ts` arricchito:** `alerts.triggeredAt` (timestamp nullable, per alert
+  fase 2); `watchlist_items` + `currency` (nullable) + `createdAt` + unique
+  `watchlist_symbol_unique(watchlist_id, symbol)`; FK `watchlists/items/alerts` con
+  `onDelete: "cascade"`. `insertWatchlistItemSchema` include `currency` (opzionale).
+- **`server/storage.ts`:** MemStorage adeguato ai nuovi tipi `$inferSelect` (add `currency`/
+  `createdAt` su item, `triggeredAt: null` su alert) — necessario per il type-check.
+- **`server/seed.ts` (nuovo):** seed idempotente utente `default` (id=1, usato da
+  `routes.ts:9 defaultUserId`) + 3 watchlist demo; risolve il bug FK su DB vuoto.
+  Script `db:seed` in package.json. NON eseguito.
+- **`docker-compose.yml` (nuovo):** `postgres:16-alpine`, porta 5432, credenziali
+  finwatch/finwatch/finwatch, volume `finwatch-pgdata`, healthcheck. NON avviato.
+- **`.env.example` NON modificato:** bloccato dal guard sui pattern `.env` (Read/Write negati).
+  Da aggiungere a mano il blocco DATABASE_URL Docker (`postgres://finwatch:finwatch@localhost:5432/finwatch`).
+- **Verde (post-attivazione):** `npm run check` 0 · `npm test` 52/52 · `npm run build` OK.
+- **Per usare Postgres da dev/prod:** l'utente deve mettere in `.env`
+  `DATABASE_URL=postgres://finwatch:finwatch@localhost:5432/finwatch` (con Docker attivo).
+- **Gestione container:** `docker compose up -d` / `down` (mantiene i dati nel volume
+  `financialwatchdog_finwatch-pgdata`) / `down -v` (cancella i dati).
+- **Server LIVE verificato (2026-07-05):** fermato il vecchio dev server orfano su :5000
+  (era pre-`.env`, su MemStorage) via `Stop-Process` (autorizzato dall'utente); riavviato
+  `npm run dev` → boot log "DatabaseStorage", `/api/watchlists` restituisce i 3 record con
+  `createdAt` = ora del seed (17:11), NON l'uptime → conferma lettura da Postgres persistente.
+  Un dev server gira in background (log `_tmp_devlog.txt`); URL app: http://localhost:5000.
+- **CRUD/cascade DatabaseStorage VERIFICATO (2026-07-05):** via API live + psql diretto.
+  Create watchlist+2 item+alert → righe presenti in Postgres (watchlists=1/items=2/alerts=1);
+  DELETE watchlist → item spariti (API `[]` e Postgres `0`) = cascade OK; cleanup alert; zero
+  residui. `currency` opzionale rispettato (USD/null). Watchlist, item e alert PERSISTENTI.
+- **Restano da fare:** `.env.example` blocco Docker (guard `.env`, a mano); alert fase 2
+  (scheduler server-side + `triggered_at` già in schema); rename watchlist; deploy (D4).
+
 ## Decisioni consolidate (2026-06-21)
 - **D1:** PostgreSQL (no SQLite; schema già `pgTable`).
 - **D2:** alert → backend locale; `borsa-alert.onrender.com` = legacy da dismettere gradualmente.
@@ -249,4 +332,11 @@ Dettaglio in `Docs/CHANGELOG_DECISIONS.md`.
   auto-allow per `.env.example/.template/.sample`, `Docs\`, `memory\`, e HTTP verso
   localhost/127.0.0.1 (pattern robusto: vale anche nei comandi composti, esclude URL esterni).
 - **NON accedere a `C:\Users\rosar\.claude`** salvo richiesta esplicita dell'utente.
-  Lavorare solo nel workspace `C:\AI-LAB\FinancialWatchdog`. Modifica policy = conclusa.
+  Lavorare solo nel workspace `C:\AI-LAB\FinancialWatchdog`.
+- **Fix policy DB/schema (2026-07-05, richiesto dall'utente):** in `never_learn_patterns` i
+  pattern `drizzle-kit`/`db:push`/`db:migrate`/`prisma` non sono più parola nuda ma ancorati
+  all'INVOCAZIONE reale (inizio segmento o dopo `npx`/`npm|pnpm|yarn|bun run`). Così
+  grep/find/rg/select-string che CERCANO quelle parole (anche via `| xargs grep`) restano
+  read-only auto-allow; solo l'esecuzione reale resta `ask`. Fatta in UN solo Write dell'intero
+  `authorization_policy.json`. Verificato: test mirato 11/11 + selftest hook 35/35, nessuna
+  regressione. Nota: scrivere la policy fa scattare 1 conferma (è `protected_file`, by design).
