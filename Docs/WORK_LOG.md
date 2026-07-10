@@ -2,6 +2,32 @@
 
 Registro cronologico degli incrementi. Voce più recente in alto.
 
+## 2026-07-10 — Deploy cloud live (Render + Supabase) + allineamento documentazione
+
+**Tipo:** allineamento documentale (questa sessione). Il deploy stesso è stato fatto
+**manualmente dall'utente fuori da questa sessione**; qui viene solo documentato per
+riportare `Docs/`/`memory/` allo stato reale. Nessuna modifica al codice applicativo, nessun
+`db:push`, nessun push, nessun segreto stampato.
+
+**Stato riportato dall'utente (attività manuale già completata):**
+- Repository GitHub creato e pushato: `https://github.com/Peros68/FinancialWatchdog`.
+- Render Web Service live: `https://financialwatchdog.onrender.com` (health:
+  `https://financialwatchdog.onrender.com/api/health`).
+- **Supabase Free PostgreSQL** scelto come DB effettivo tramite `DATABASE_URL` su Render.
+- Render Postgres `financialwatchdog-db` creato per prova ma **non usato**.
+- GitHub Actions keepalive pubblicato: `.github/workflows/keepalive.yml` (già in `main`,
+  commit `e3b23b9` del 2026-07-10) — ping `/api/health` ogni 10 min, Lun-Ven 07:00-21:50 UTC.
+- Repository variable `RENDER_HEALTH_URL` configurata; run manuale del workflow
+  "Keep Render awake (market hours)": **Success**.
+- Env var Render configurate: `NODE_ENV`, `DATABASE_URL`, `FINNHUB_API_KEY`.
+
+**Doc aggiornati in questa sessione:** `Docs/PROJECT_STATUS.md` (nuova sezione "Deploy cloud —
+Render + Supabase", D4 marcata FATTA), `Docs/HANDOVER.md` (§5/§8, stato deploy), questa voce di
+`WORK_LOG.md`, `memory/MEMORY.md` (stato operativo deploy).
+
+**Aperto/non verificato:** allineamento schema su Supabase (nessun `db:push` puntato a Supabase
+in questa sessione); destino del Render Postgres di prova non utilizzato (tenere o dismettere).
+
 ## 2026-07-10 — Authorization Judge v2 implementato (F.2/F.3) + avvio canary (F.4)
 
 **Tipo:** infrastruttura autorizzazioni (nessuna modifica al codice applicativo).

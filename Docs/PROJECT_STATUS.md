@@ -1,15 +1,18 @@
 # PROJECT STATUS — FinancialWatchdog
 
-**Ultimo aggiornamento:** 2026-06-21
-**Fase:** Blocchi 1-8 completati. Stabilizzazione + baseline qualità + migrazione alert (D2/D2-bis)
-+ screens + toolbar veritiera + monitoraggio alert v1 + architettura provider dati (Yahoo default,
-Finnhub opzionale/fallback, Settings) + **dati fondamentali** (settore/industria/dividendi via Yahoo;
-market cap/EPS/multipli via Finnhub se key) + **caricamento `.env`** (`process.loadEnvFile`).
-**L'app funziona senza key; con key Finnhub arricchisce i fondamentali.**
-**check 0 · lint 0 · test 31/31 · build OK.** Prossimo grande passo: PostgreSQL (D1/D4, non ora).
+**Ultimo aggiornamento:** 2026-07-10
+**Fase:** Blocchi 1-8 completati + PostgreSQL locale (D1) + alert fase 2 server-side + Modello C
+(drawings persistenti) + **deploy cloud live (D4 FATTA)** su Render con Supabase come DB effettivo.
+**check 0 · lint 0 · test 89/89 · build OK** (ultima verifica locale nota, 2026-07-06).
+
+> **Deploy cloud FATTO (2026-07-10, attività manuale utente — vedi sezione dedicata in fondo).**
+> App live su Render (`https://financialwatchdog.onrender.com`), DB reale = Supabase Free
+> PostgreSQL, keepalive via GitHub Actions in orari di mercato. **D4 non è più aperta.**
 
 > **Sessione chiusa il 2026-06-21.** Per riprendere: leggere `Docs/HANDOVER.md`.
 > Versionamento: branch `main`, ~33 voci **non committate** (nessun commit in sessione).
+> *(Nota 2026-07-10: superato — il lavoro successivo a questa data è stato committato,
+> vedi `WORK_LOG.md` per lo storico completo dei commit fino a `e3b23b9`.)*
 
 > **Aggiornamento 2026-07-05 — Grafico avanzato.** Ampliato lo strumento grafico del titolo
 > (`client/src/components/stock-chart.tsx`) con timeframe/assi rivisti, tooltip leggibile,
@@ -80,8 +83,8 @@ Dettaglio in `CHANGELOG_DECISIONS.md`.
 - **D1 — Database:** PostgreSQL (schema già `pgTable`, no SQLite).
 - **D2 — Alert:** migrare sul backend locale; `borsa-alert.onrender.com` = legacy da dismettere.
 - **D3 — Controllo alert:** lato frontend in fase 1; scheduler backend in fase successiva.
-- **D4 — Provisioning:** solo locale, **no cloud / no Render** ora; predisporre per `DATABASE_URL`.
-  Nessun nuovo servizio esterno e nessun costo senza conferma utente.
+- **D4 — Provisioning:** ~~solo locale, no cloud/Render~~ → **FATTA 2026-07-10**: deploy live su
+  Render + Supabase Free PostgreSQL come DB effettivo (dettaglio in fondo al documento).
 
 ### Direzione target (post-decisioni, non ancora implementata)
 
@@ -181,3 +184,30 @@ serie disegnate con `isAnimationActive={false}`).
 
 **Nota (scope):** l'alert del trend è un prezzo statico proiettato al momento dell'arma/drag; non
 si ricalcola nel tempo (un trend-alert dinamico richiederebbe modifica schema → decisione utente).
+
+---
+
+## Deploy cloud — Render + Supabase (2026-07-10, D4 FATTA)
+
+**Tipo:** attività manuale dell'utente (fuori sessione Claude Code); documentata qui su richiesta
+esplicita per allineare la documentazione interna. Nessuna modifica al codice applicativo in
+questa sessione di allineamento.
+
+- **Repository GitHub:** creato e pushato — `https://github.com/Peros68/FinancialWatchdog`
+  (`origin` già configurato nel working tree locale).
+- **Hosting:** Render Web Service **live** — `https://financialwatchdog.onrender.com`.
+- **Health check:** `https://financialwatchdog.onrender.com/api/health`.
+- **Database effettivo:** **Supabase Free PostgreSQL**, collegato via `DATABASE_URL` nelle env
+  var di Render. Un servizio **Render Postgres** (`financialwatchdog-db`) è stato creato per prova
+  ma **non è quello in uso** (resta provisioned/inutilizzato — da valutare se dismetterlo).
+- **Keepalive CI:** `.github/workflows/keepalive.yml` (commit `e3b23b9`) — ping
+  `GET /api/health` ogni 10 minuti, Lun–Ven 07:00–21:50 UTC (copre l'orario di mercato
+  Italia+USA in entrambi i regimi DST). Repository variable `RENDER_HEALTH_URL` configurata su
+  GitHub. Run manuale del workflow "Keep Render awake (market hours)": **Success**.
+- **Env var Render configurate:** `NODE_ENV`, `DATABASE_URL`, `FINNHUB_API_KEY` (valori mai
+  stampati/loggati in questa sessione né in precedenti).
+- **Stato schema su Supabase:** non verificato in questa sessione (nessun `db:push` eseguito,
+  su richiesta esplicita dell'utente per questo turno). Da verificare in una sessione successiva
+  se lo schema (incl. tabella `drawings` del Modello C) è allineato anche lato Supabase.
+- **Impatto su D1/D4:** D4 (provisioning cloud) è ora **chiusa/fatta**. Resta aperto solo capire
+  se tenere o eliminare il servizio Render Postgres di prova non utilizzato.

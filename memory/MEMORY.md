@@ -306,8 +306,8 @@ codice fatte E attivazione completata: Docker up, db:push, db:seed, verifica Dat
 - **D1:** PostgreSQL (no SQLite; schema già `pgTable`).
 - **D2:** alert → backend locale; `borsa-alert.onrender.com` = legacy da dismettere gradualmente.
 - **D3:** controllo alert lato frontend in fase 1; scheduler backend in fase successiva.
-- **D4:** solo locale, NO cloud/Render ora; predisporre per `DATABASE_URL`. Nessun nuovo
-  servizio esterno e nessun costo senza conferma utente.
+- **D4:** ~~solo locale, NO cloud/Render ora~~ → **FATTA 2026-07-10**: deploy live su Render,
+  DB effettivo Supabase Free PostgreSQL (vedi sezione "Deploy cloud" sopra).
 Dettaglio in `Docs/CHANGELOG_DECISIONS.md`.
 
 ## Note operative
@@ -340,6 +340,24 @@ Dettaglio in `Docs/CHANGELOG_DECISIONS.md`.
   read-only auto-allow; solo l'esecuzione reale resta `ask`. Fatta in UN solo Write dell'intero
   `authorization_policy.json`. Verificato: test mirato 11/11 + selftest hook 35/35, nessuna
   regressione. Nota: scrivere la policy fa scattare 1 conferma (è `protected_file`, by design).
+
+## Deploy cloud — Render + Supabase (2026-07-10, D4 FATTA — attività manuale utente)
+- **Fatto dall'utente fuori sessione Claude Code**; qui solo documentato per allineare la
+  memoria operativa allo stato reale (nessuna modifica al codice applicativo).
+- GitHub: repo pushato su `https://github.com/Peros68/FinancialWatchdog` (`origin` già
+  configurato nel working tree locale).
+- Render Web Service **live**: `https://financialwatchdog.onrender.com`
+  (health: `https://financialwatchdog.onrender.com/api/health`).
+- **DB effettivo = Supabase Free PostgreSQL** via `DATABASE_URL` nelle env var Render.
+  Render Postgres `financialwatchdog-db` creato per prova ma **NON usato** (da decidere se
+  dismetterlo).
+- Env var Render configurate: `NODE_ENV`, `DATABASE_URL`, `FINNHUB_API_KEY` — **mai stampate**.
+- Keepalive: `.github/workflows/keepalive.yml` (commit `e3b23b9`, già in `main`) — ping
+  `/api/health` ogni 10 min, Lun-Ven 07:00-21:50 UTC. Repository variable `RENDER_HEALTH_URL`
+  configurata; run manuale "Keep Render awake (market hours)": **Success**.
+- **Aperto:** schema su Supabase non verificato in questa sessione (nessun `db:push` puntato a
+  Supabase eseguito qui); destino del Render Postgres di prova inutilizzato.
+- **D4 (decisioni consolidate 2026-06-21) è ora FATTA**, non più "solo locale/no cloud".
 
 ## Authorization Judge v2 ATTIVO (2026-07-10, F.2/F.3 fatte — CANARY F.4 in corso)
 - v2 = classificazione deterministica context-aware: quote-masking (P1), per-segmento con

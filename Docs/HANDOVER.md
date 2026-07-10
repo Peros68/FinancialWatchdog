@@ -3,20 +3,26 @@
 > Documento di ripresa sessione. Leggere PRIMA di riprendere, insieme a
 > `PROJECT_STATUS.md`, `CHANGELOG_DECISIONS.md`, `WORK_LOG.md`, `memory/MEMORY.md`.
 
-**Ultimo aggiornamento:** 2026-07-06
-**Stato qualità:** `npm run check` 0 · `npm run lint` 0 · `npm test` **89/89** · `npm run build` OK.
+**Ultimo aggiornamento:** 2026-07-10
+**Stato qualità (ultima verifica nota, 2026-07-06):** `npm run check` 0 · `npm run lint` 0 ·
+`npm test` **89/89** · `npm run build` OK.
 **GATE CHIUSO (2026-07-06):** `npm run db:push` eseguito su conferma utente (Docker Desktop e
 container `finwatch-postgres` avviati prima del push; DATABASE_URL passato inline). Output
 drizzle-kit: "Changes applied" → tabella `drawings` creata secondo l'output drizzle (nessuna
 verifica diretta ulteriore, su indicazione utente).
 
+**DEPLOY CLOUD LIVE (2026-07-10, fatto manualmente dall'utente):** app live su Render
+(`https://financialwatchdog.onrender.com`), DB effettivo = **Supabase Free PostgreSQL** via
+`DATABASE_URL`, keepalive GitHub Actions. **D4 non è più una decisione aperta.** Dettaglio in §8.
+
 ## 1. Stato in una riga
 App "FinAlert" (React+Vite / Express+TS / Drizzle) stabilizzata e ampliata: **storage
-persistente su PostgreSQL locale** (Docker) quando `DATABASE_URL` è presente, altrimenti
-MemStorage; dati di mercato **provider-agnostic** (Yahoo default, Finnhub opzionale),
-schermate principali funzionanti, monitoraggio alert v1, dati fondamentali, grafico avanzato
-(candele/area, strumenti di disegno + alert). **Funziona anche senza chiavi**; con
-`FINNHUB_API_KEY` arricchisce i fondamentali.
+persistente su PostgreSQL** (locale via Docker in sviluppo, **Supabase in produzione su
+Render**) quando `DATABASE_URL` è presente, altrimenti MemStorage; dati di mercato
+**provider-agnostic** (Yahoo default, Finnhub opzionale), schermate principali funzionanti,
+monitoraggio alert v1+v2 (scheduler server-side), dati fondamentali, grafico avanzato
+(candele/area, strumenti di disegno + alert persistenti). **Funziona anche senza chiavi**; con
+`FINNHUB_API_KEY` arricchisce i fondamentali. **Deployata e live su Render** (§8).
 
 ## 2. Come avviare e verificare
 ```
@@ -75,10 +81,13 @@ npm run build      # build client + bundle server
   (crumb Yahoo fragile o tier Finnhub a pagamento) — decisione separata.
 - **Rename watchlist**: richiede nuova API.
 - **Widget TradingView**: non integrato (solo util di conversione simboli).
-- **Deploy cloud (D4)**: non fatto (solo locale). `@neondatabase/serverless` resta pronto per Neon.
+- ~~**Deploy cloud (D4)**: non fatto~~ — **FATTO 2026-07-10** (Render + Supabase, vedi §8).
 - **`.env.example`**: aggiungere a mano il blocco Docker `DATABASE_URL` (i tool file sono
   bloccati dal guard sui pattern `.env`).
 - **Commit/versionamento** del lavoro non committato (blocco PostgreSQL incluso).
+- **Render Postgres di prova non usato** (`financialwatchdog-db`): tenere o dismettere?
+- **Schema su Supabase**: non verificato che sia allineato allo schema Drizzle (incl. `drawings`
+  del Modello C) — nessun `db:push` puntato a Supabase eseguito finora.
 
 ## 6. PostgreSQL locale (D1/D4) — FATTO (2026-07-05)
 Attivato e verificato. Per usarlo:
@@ -97,3 +106,24 @@ Attivato e verificato. Per usarlo:
 - Non inserire chiavi reali (le mette l'utente in `.env`); non stamparle/loggarle/committarle.
 - `.env.example`/`.template`/`.sample`, `Docs/`, `memory/` = aggiornabili in autonomia.
 - Stato/decisioni: documenti di autorità in `Docs/` + `memory/MEMORY.md` (prevalgono sulla chat).
+
+## 8. Deploy cloud (D4) — FATTO 2026-07-10 (Render + Supabase)
+Attività **manuale dell'utente**, fuori da una sessione Claude Code; documentata qui il
+2026-07-10 su richiesta esplicita per allineare `Docs/`/`memory/` allo stato reale.
+
+- **GitHub:** repo creato e pushato — `https://github.com/Peros68/FinancialWatchdog`
+  (`origin` già impostato nel working tree locale, verificato).
+- **Render Web Service:** live — `https://financialwatchdog.onrender.com`.
+  Health: `https://financialwatchdog.onrender.com/api/health`.
+- **Database:** **Supabase Free PostgreSQL** è il DB effettivo, collegato via `DATABASE_URL`
+  nelle env var di Render. Un **Render Postgres** (`financialwatchdog-db`) creato per prova
+  **non è in uso** — resta da decidere se dismetterlo (vedi §5).
+- **Env var Render:** `NODE_ENV`, `DATABASE_URL`, `FINNHUB_API_KEY` configurate (valori mai
+  stampati).
+- **Keepalive:** `.github/workflows/keepalive.yml` (già in `main`, commit `e3b23b9`) — ping
+  `/api/health` ogni 10 min, Lun-Ven 07:00-21:50 UTC (copre mercato Italia+USA in entrambi i
+  regimi DST). Repository variable `RENDER_HEALTH_URL` configurata su GitHub; run manuale del
+  workflow "Keep Render awake (market hours)": **Success**.
+- **Non verificato in questa sessione:** se lo schema Drizzle (incl. tabella `drawings` del
+  Modello C, §6 di questo documento) è stato applicato su Supabase — nessun `db:push` puntato
+  a Supabase è stato eseguito qui (fuori scope di questa sessione di allineamento doc).
