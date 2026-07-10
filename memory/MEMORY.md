@@ -340,3 +340,15 @@ Dettaglio in `Docs/CHANGELOG_DECISIONS.md`.
   read-only auto-allow; solo l'esecuzione reale resta `ask`. Fatta in UN solo Write dell'intero
   `authorization_policy.json`. Verificato: test mirato 11/11 + selftest hook 35/35, nessuna
   regressione. Nota: scrivere la policy fa scattare 1 conferma (è `protected_file`, by design).
+
+## Authorization Judge v2 ATTIVO (2026-07-10, F.2/F.3 fatte — CANARY F.4 in corso)
+- v2 = classificazione deterministica context-aware: quote-masking (P1), per-segmento con
+  max-severity (P2), cwd effettivo via cd (P3), credenziali per azione+target (P4), rete per
+  host (P5: localhost=safe anche nei compositi, remoto=ask), scratchpad di sessione fidato
+  (P6), giudice IA SPENTO (G-1a, default-ask). Dettaglio completo, FP eliminati, buchi chiusi,
+  procedura canary e criteri di rollback: `memory/policy-judge-v2.md`.
+- Selftest: `python ~/.claude/hooks/_selftest_v2.py --target v2` → 50/50 (fa 1 ask, by design).
+  Backup v1 per rollback: `~/.claude/hooks/backup/2026-07-07/`.
+- **CANARY (2026-07-10 → ~13/07):** a fine giornata audit del log di produzione (ask fondate,
+  allow nuove regole a campione, zero ai-judge, zero deny errati). Primo giro verde:
+  check 0 · Vitest 89/89 auto-approvati senza prompt.

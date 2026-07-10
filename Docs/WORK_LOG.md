@@ -2,6 +2,34 @@
 
 Registro cronologico degli incrementi. Voce più recente in alto.
 
+## 2026-07-10 — Authorization Judge v2 implementato (F.2/F.3) + avvio canary (F.4)
+
+**Tipo:** infrastruttura autorizzazioni (nessuna modifica al codice applicativo).
+
+**Fatto:**
+- Implementata la v2 del Judge secondo `Docs/PROPOSAL_AUTH_JUDGE_V2.md`: P1 quote-masking
+  (le stringhe quotate sono dati, non azioni), P2 classificazione per segmento con
+  max-severity, P3 cwd effettivo via `cd`, P4 credenziali per azione+target, P5 rete per
+  host estratti (localhost=safe, remoto=ask), P6 scratchpad di sessione fidato, D-3
+  deterministico (cancellazioni su zone di sistema → deny), G-1a giudice IA SPENTO
+  (default-ask), G-3b `npm install` da solo lockfile / `npm ci` = safe, G-4a force-push →
+  deny, G-5b `git add -A/.` chiede solo se esiste un `.env` reale non ignorato (fail-closed
+  se cwd non verificabile).
+- File modificati (SOLO questi 3): `~/.claude/hooks/auth_common.py`,
+  `~/.claude/hooks/authorization_judge.py`, `~/.claude/authorization_policy.json`.
+  Backup v1 integro in `~/.claude/hooks/backup/2026-07-07/` (rollback = ripristino dei 3 file).
+
+**Verifiche:** baseline v1 50/50 (suite `authorization_cases.jsonl` certificata sul
+comportamento reale PRIMA delle modifiche); sviluppo su copie in scratchpad con harness
+50/50 + smoke-test 23 comandi del flusso quotidiano; selftest ufficiale
+`_selftest_v2.py --target v2` → **50/50 PASS**. Log del selftest rediretto su
+`authorization_log_selftest.jsonl` (P8): log di produzione pulito.
+
+**Canary F.4 avviato (2026-07-10):** 2-3 giorni di lavoro normale; a fine giornata audit
+del log (ask residue fondate, SAFE emesse dalle regole nuove, zero invocazioni ai-judge).
+Procedura, metriche e criteri di rollback in `memory/policy-judge-v2.md`. Primo giro:
+`npm run check` 0 errori · Vitest 89/89, auto-approvati dal v2 senza prompt.
+
 ## 2026-07-06 — Modello C: drawings persistenti + ri-proiezione alert 08:00 Italia
 
 **Tipo:** lavoro applicativo su decisione utente ("C piena": tutti i disegni persistenti nel DB,

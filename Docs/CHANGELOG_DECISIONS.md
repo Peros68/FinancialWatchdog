@@ -99,3 +99,17 @@ stop-condition: vanno consolidate con l'utente, mai prese in autonomia (spec §8
 - **Abilitazione key:** aggiunto `server/loadEnv.ts` (`process.loadEnvFile`, built-in, no dep) per
   caricare `.env` PRIMA dei provider — senza, la `FINNHUB_API_KEY` non veniva letta dall'app.
 - **Verificato live** con e senza key (sources `["yahoo"]` vs `["yahoo","finnhub"]`); key mai esposta.
+
+### D-judge-v2 — Authorization Judge v2 (classificazione SAFE/ASK/DENY context-aware) ✅ (2026-07-10)
+- **Decisione (utente):** adottare la proposta `Docs/PROPOSAL_AUTH_JUDGE_V2.md` con le
+  raccomandazioni del blocco G: **G-1(a)** giudice IA spento (zona grigia → default-ask
+  deterministico); **G-2(a)** rete verso host remoti sempre ask (anche read-only, es. `gh api`);
+  **G-3(b)** `npm ci`/`npm install` senza pacchetti (lockfile) = safe, con pacchetti = ask;
+  **G-4(a)** `git push` normale ask, force-push/`--delete` deny; **G-5(b)** `git add -A/.`
+  ask solo se esiste un `.env` reale non ignorato nel cwd (check contestuale, fail-closed);
+  **G-6(a)** `rm -rf` resta ask anche nel workspace; **G-7 sì** scratchpad di sessione fidato.
+- **G-8 (versionamento git di `~/.claude`): NON attivato** — il rollback resta la copia datata
+  in `~/.claude/hooks/backup/<data>/` (v1 in `2026-07-07/`).
+- **Esito:** implementata il 2026-07-10 (F.2/F.3), selftest 50/50; canary F.4 in corso.
+- **Effetto atteso:** ask reali ridotte alle sole stop-condition (stima −58% sul periodo
+  post-2026-07-04), zero verdetti non deterministici, niente DENY "per forma".
