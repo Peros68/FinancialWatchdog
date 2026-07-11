@@ -2,9 +2,10 @@ import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { TrendingUp, TrendingDown, Activity } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { TrendingUp, TrendingDown, Activity, Search } from 'lucide-react';
 import AlertChart from '@/components/alert-chart';
-import { fetchLocalAlerts, isAlertTriggered } from '@/lib/alertsApi';
+import { fetchLocalAlerts, isAlertTriggered, matchesAlertQuery } from '@/lib/alertsApi';
 import { cn } from '@/lib/utils';
 
 // Simple beep via the Web Audio API (no extra dependency). Best-effort: some
@@ -31,6 +32,7 @@ function playBeep() {
 
 export default function AlertsPage() {
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
   // Alerts come from the LOCAL backend (/api/alerts). The same query key is
   // invalidated by AlertModal on creation, so new alerts appear here immediately.
@@ -55,6 +57,11 @@ export default function AlertsPage() {
       if (b.distanza == null) return -1;
       return Math.abs(a.distanza) - Math.abs(b.distanza);
     });
+
+  // Real-time filter by symbol or company name (matchesAlertQuery: same substring,
+  // case-insensitive logic as Search Stocks). Name comes from /api/stocks/profile via
+  // fetchLocalAlerts, so it degrades gracefully (null) when unavailable.
+  const filteredAlerts = sortedAlerts.filter(alert => matchesAlertQuery(alert, search));
 
   // Active monitoring (v1): play a beep once when an alert newly reaches its target.
   const triggeredSymbols = sortedAlerts.filter(a => a.triggered).map(a => a.symbol);
@@ -91,6 +98,16 @@ export default function AlertsPage() {
         <p className="text-gray-400">
           Titoli ordinati per prossimità al target di prezzo
         </p>
+      </div>
+
+      <div className="relative mb-6 max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Filtra per simbolo o nome società..."
+          className="pl-9"
+        />
       </div>
 
       {alertsLoading && (
@@ -133,10 +150,21 @@ export default function AlertsPage() {
         </Card>
       )}
 
+      {!alertsLoading && !alertsError && sortedAlerts.length > 0 && filteredAlerts.length === 0 && (
+        <Card className="bg-card border-border">
+          <CardContent className="p-12 text-center">
+            <Search className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+            <h3 className="text-lg font-medium text-foreground mb-2">
+              Nessun alert corrisponde a "{search}"
+            </h3>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid gap-4">
-        {sortedAlerts.map((alert) => (
+        {filteredAlerts.map((alert) => (
           <Card
-            key={alert.symbol}
+            key={alert.id}
             className={cn(
               "bg-card border-border hover:bg-muted/50 transition-colors cursor-pointer",
               alert.triggered && "border-green-500 ring-1 ring-green-500"
@@ -158,7 +186,7 @@ export default function AlertsPage() {
                       )}
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      {alert.symbol} Stock
+                      {alert.name ?? `${alert.symbol} Stock`}
                     </p>
                   </div>
                 </div>

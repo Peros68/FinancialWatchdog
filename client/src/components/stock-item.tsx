@@ -6,6 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { StockSearchResult } from "@shared/schema";
 import WatchlistModal from "./watchlist-modal";
 import { useState } from "react";
+import { useWatchlistMembership } from "@/hooks/use-watchlist-membership";
+import { cn } from "@/lib/utils";
 
 interface StockItemProps {
   stock: StockSearchResult;
@@ -13,6 +15,7 @@ interface StockItemProps {
 
 export default function StockItem({ stock }: StockItemProps) {
   const [showWatchlistModal, setShowWatchlistModal] = useState(false);
+  const { isInAnyWatchlist } = useWatchlistMembership(stock.symbol);
 
   const handleStarClick = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -48,7 +51,7 @@ export default function StockItem({ stock }: StockItemProps) {
                 className="text-muted-foreground hover:text-primary transition-colors p-2"
                 onClick={handleStarClick}
               >
-                <Star className="w-4 h-4" />
+                <Star className={cn("w-4 h-4", isInAnyWatchlist && "fill-yellow-400 text-yellow-400")} />
               </Button>
             </div>
           </Link>

@@ -9,6 +9,7 @@ import StockChart from "@/components/stock-chart";
 import WatchlistModal from "@/components/watchlist-modal";
 import { StockQuote, StockProfile, StockSearchResult, Fundamentals } from "@shared/schema";
 import { cn } from "@/lib/utils";
+import { useWatchlistMembership } from "@/hooks/use-watchlist-membership";
 
 // Safe numeric formatter: tolerates missing/partial quote fields (e.g. when the
 // market-data provider key is absent) without throwing.
@@ -31,6 +32,7 @@ const fmtMarketCapMillions = (m?: number | null) => {
 export default function StockDetailPage() {
   const { symbol } = useParams<{ symbol: string }>();
   const [showWatchlistModal, setShowWatchlistModal] = useState(false);
+  const { isInAnyWatchlist } = useWatchlistMembership(symbol ?? "", !!symbol);
 
   const { data: quote, isLoading: quoteLoading } = useQuery<StockQuote>({
     queryKey: [`/api/stocks/quote/${symbol}`],
@@ -80,9 +82,9 @@ export default function StockDetailPage() {
                 size="sm"
                 className="text-muted-foreground hover:text-primary h-7 px-2"
                 onClick={() => setShowWatchlistModal(true)}
-                aria-label="Aggiungi a una watchlist"
+                aria-label={isInAnyWatchlist ? "Gestisci le watchlist per questo titolo" : "Aggiungi a una watchlist"}
               >
-                <Star className="w-3 h-3" />
+                <Star className={cn("w-3 h-3", isInAnyWatchlist && "fill-yellow-400 text-yellow-400")} />
               </Button>
             </div>
 

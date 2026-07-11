@@ -17,6 +17,12 @@ describe("granularityFor", () => {
     expect(granularityFor("1D")).toBe("time");
     expect(granularityFor("1h")).toBe("time");
   });
+
+  it("maps 3M/6M→day, same as 1M", () => {
+    expect(granularityFor("3Mo")).toBe("day");
+    expect(granularityFor("6Mo")).toBe("day");
+    expect(granularityFor("1Mo")).toBe("day");
+  });
 });
 
 describe("formatAxisTick", () => {

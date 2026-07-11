@@ -86,8 +86,54 @@ npm run build      # build client + bundle server
   bloccati dal guard sui pattern `.env`).
 - **Commit/versionamento** del lavoro non committato (blocco PostgreSQL incluso).
 - **Render Postgres di prova non usato** (`financialwatchdog-db`): tenere o dismettere?
-- **Schema su Supabase**: non verificato che sia allineato allo schema Drizzle (incl. `drawings`
-  del Modello C) — nessun `db:push` puntato a Supabase eseguito finora.
+- ~~**Schema su Supabase**: non verificato~~ — **FATTO 2026-07-11**: `db:push` + `db:seed`
+  eseguiti su Supabase (conferma utente), persistenza live verificata end-to-end (§9).
+- ~~**Stella titolo → stato watchlist**~~ — **FATTO 2026-07-11**: nuovo hook
+  `client/src/hooks/use-watchlist-membership.ts` (riusa `GET /api/watchlists` +
+  `GET /api/watchlists/:id/items`, nessuna nuova API/dipendenza) espone, per simbolo,
+  l'elenco watchlist con eventuale item già presente. `stock-detail.tsx`: stella gialla
+  (`fill-yellow-400`) se il titolo è in almeno una watchlist. `watchlist-modal.tsx`: mostra
+  **tutte** le watchlist con stato selezionato (stella gialla)/non selezionato (cerchio vuoto)
+  per quel simbolo; click su una riga aggiunge (`POST .../items`) o rimuove
+  (`DELETE /api/watchlists/items/:id`) direttamente, senza chiudere la modale (per poter
+  toggleare più watchlist in sequenza).
+- ~~**Intervalli grafico 3M e 6M**~~ — **FATTO 2026-07-11**: aggiunti alla barra timeframe di
+  `stock-chart.tsx` (`quickTimeframes`/`allTimeframes`, valori `3Mo`/`6Mo`, range Yahoo
+  `3mo`/`6mo`) e a `client/src/lib/chart-axis.ts` (`GRANULARITY["3Mo"|"6Mo"] = "day"`, stessa
+  resa di `1Mo`). Ordine finale: `15m, 1H, 1G, 1S, 1M, 3M, 6M, 1A, 5A`. Test aggiunto in
+  `tests/chart-axis.test.ts`.
+- **Filtro Alert per simbolo/nome — CORRETTO 2026-07-11**: il filtro (aggiunto lo stesso
+  giorno) ora cerca anche per **nome società**, non solo simbolo, riusando l'endpoint già
+  esistente `GET /api/stocks/profile/:symbol` (stesso dato usato da Search Stocks/stock-detail,
+  nessuna nuova dipendenza). `alertsApi.ts`: `UiAlert.name`, `fetchCompanyName`,
+  `mapDbAlertToUi` esteso, predicato puro esportato `matchesAlertQuery` (testato in
+  `tests/alerts-mapping.test.ts`) usato sia dal filtro sia (potenzialmente) altrove. La card
+  alert ora mostra il nome reale della società al posto del placeholder `"{symbol} Stock"`.
+- **Bug alert duplicati/orfani — FIX 2026-07-11** (dettaglio in `memory/MEMORY.md`): causa
+  doppia — (1) `toggleArm` in `stock-chart.tsx` aggiornava lo stato armato in modo ottimistico
+  prima della conferma server e ingoiava errori in silenzio, potendo lasciare alert orfani nel
+  backend dopo un disarmo fallito seguito da un riarmo; (2) `key={alert.symbol}` in
+  `alerts.tsx` non univoca quando più alert condividono simbolo, causando nodi DOM fantasma
+  durante il filtro. Entrambi corretti (`key={alert.id}`; `toggleArm` aggiorna lo stato solo a
+  conferma avvenuta, con toast d'errore sul fallimento del disarmo). I 2 record IBM
+  duplicati/orfani già presenti nella MemStorage locale di test sono stati **cancellati
+  2026-07-11** via `DELETE /api/alerts/:id` (id 1 e 2), solo storage locale, nessuna chiamata
+  verso Render/Supabase.
+- **Watchlist: bidone → stella — FATTO 2026-07-11**: in `client/src/pages/watchlist.tsx`,
+  `WatchlistItemCard` mostra ora una stella gialla piena (coerente con lo stato "presente" già
+  usato in `WatchlistModal`/Search Stocks) al posto dell'icona `Trash2`; click rimuove il
+  titolo (stessa azione di prima). Il bidone resta solo sul pulsante "Elimina watchlist"
+  (azione distinta, cancella l'intera watchlist).
+- **Requisito mobile registrato 2026-07-11 (NON implementato — richiesta esplicita utente:
+  prima proporre il miglioramento responsive minimo, NO app nativa/PWA per ora):** vista
+  smartphone deve avere layout dedicato: header e testi più compatti, meno spazio verticale,
+  grafico più grande. Riferimento visivo: `Docs/img/v1.jpeg` (stock-detail su schermo IBM) —
+  problemi osservabili nello screenshot: (a) navbar "FinAlert" + card header (Back/stella/nome
+  azienda troncato/prezzo) occupano gran parte della viewport prima del grafico; (b) barra
+  timeframe **overflow orizzontale** (l'ultima voce "5A" è tagliata fuori schermo, non c'è
+  wrap/scroll visibile); (c) il grafico vero e proprio resta compresso in poco spazio residuo.
+  Nessuna implementazione fatta: da proporre un intervento responsive minimo (breakpoint
+  mobile, non nuova app) prima di procedere.
 
 ## 6. PostgreSQL locale (D1/D4) — FATTO (2026-07-05)
 Attivato e verificato. Per usarlo:
@@ -124,6 +170,22 @@ Attività **manuale dell'utente**, fuori da una sessione Claude Code; documentat
   `/api/health` ogni 10 min, Lun-Ven 07:00-21:50 UTC (copre mercato Italia+USA in entrambi i
   regimi DST). Repository variable `RENDER_HEALTH_URL` configurata su GitHub; run manuale del
   workflow "Keep Render awake (market hours)": **Success**.
-- **Non verificato in questa sessione:** se lo schema Drizzle (incl. tabella `drawings` del
-  Modello C, §6 di questo documento) è stato applicato su Supabase — nessun `db:push` puntato
-  a Supabase è stato eseguito qui (fuori scope di questa sessione di allineamento doc).
+- **Schema Supabase allineato: FATTO 2026-07-11** (§9) — `db:push` applicato, tutte e 5 le
+  tabelle presenti incl. `drawings`.
+
+## 9. Schema Supabase + persistenza live — VERIFICATO 2026-07-11
+- **Verifica read-only pre-push**: script `_tmp_check_schema.mjs` (introspezione
+  `information_schema`, nessuna scrittura) contro la `DATABASE_URL` Supabase di Render →
+  **tutte e 5 le tabelle mancanti** (schema mai applicato a Supabase).
+- **`db:push` + `db:seed` eseguiti dall'utente** (conferma esplicita, comando lanciato nel suo
+  terminale per non far transitare `DATABASE_URL` in chat): `"Changes applied"`; seed → utente
+  `default` (id=1) + watchlist "Tech Stocks"/"Blue Chips"/"Growth".
+- **Verifica end-to-end live** (curl pubblici su `financialwatchdog.onrender.com`, script unico
+  `_tmp_live_test.sh`): `GET /api/watchlists` → le 3 watchlist seed con `createdAt` = istante del
+  seed mentre `uptime` risultava di soli 13s (riavvio a freddo del processo Render) → prova che i
+  dati sopravvivono al riavvio, quindi storage reale = Supabase, non `MemStorage`. Round-trip
+  scrittura/lettura: `POST /api/watchlists/1/items` (AAPL) e `POST /api/alerts` (AAPL above
+  999.99) → rilette identiche su GET successive. Lasciati live come prova visiva per test manuale
+  da browser (voce AAPL in "Tech Stocks" + alert AAPL).
+- **Nota tecnica**: `POST /api/alerts` richiede `targetPrice` **numerico** (non stringa) nel body,
+  altrimenti 400 Zod `invalid_type`.

@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Star } from "lucide-react";
 import { Link } from "wouter";
 import { Watchlist, WatchlistItem } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
@@ -258,12 +258,14 @@ function WatchlistItemCard({
           <Button
             variant="ghost"
             size="sm"
-            className="ml-4 text-muted-foreground hover:text-red-500"
+            className="ml-4"
             onClick={onRemove}
             disabled={removing}
             aria-label={`Rimuovi ${item.symbol} dalla watchlist`}
           >
-            <Trash2 className="w-4 h-4" />
+            {/* Item è sempre presente in questa lista: stella piena/gialla, coerente con lo
+                stato "presente" usato in WatchlistModal e Search Stocks. Click = rimuovi. */}
+            <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
           </Button>
         </div>
       </CardContent>

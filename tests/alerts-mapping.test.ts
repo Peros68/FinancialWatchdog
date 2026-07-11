@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mapDbAlertToUi, isAlertTriggered } from "@/lib/alertsApi";
+import { mapDbAlertToUi, isAlertTriggered, matchesAlertQuery } from "@/lib/alertsApi";
 import type { Alert as DbAlert } from "@shared/schema";
 
 const baseAlert: DbAlert = {
@@ -13,21 +13,50 @@ const baseAlert: DbAlert = {
 };
 
 describe("mapDbAlertToUi", () => {
-  it("maps targetPrice -> target and carries id/symbol/alertType + price", () => {
-    const ui = mapDbAlertToUi(baseAlert, 187.5);
+  it("maps targetPrice -> target and carries id/symbol/alertType + price + name", () => {
+    const ui = mapDbAlertToUi(baseAlert, 187.5, "Apple Inc.");
     expect(ui).toEqual({
       id: 7,
       symbol: "AAPL",
+      name: "Apple Inc.",
       target: 200,
       alertType: "above",
       price: 187.5,
     });
   });
 
-  it("defaults price to null when not provided (e.g. quote unavailable)", () => {
+  it("defaults price and name to null when not provided (e.g. quote/profile unavailable)", () => {
     const ui = mapDbAlertToUi(baseAlert);
     expect(ui.price).toBeNull();
+    expect(ui.name).toBeNull();
     expect(ui.target).toBe(200);
+  });
+});
+
+describe("matchesAlertQuery (Alerts page search box)", () => {
+  const aapl = { symbol: "AAPL", name: "Apple Inc." };
+
+  it("empty query matches everything", () => {
+    expect(matchesAlertQuery(aapl, "")).toBe(true);
+    expect(matchesAlertQuery(aapl, "   ")).toBe(true);
+  });
+
+  it("matches by symbol, case-insensitive substring", () => {
+    expect(matchesAlertQuery(aapl, "aap")).toBe(true);
+    expect(matchesAlertQuery(aapl, "AAPL")).toBe(true);
+    expect(matchesAlertQuery(aapl, "msft")).toBe(false);
+  });
+
+  it("matches by company name, case-insensitive substring", () => {
+    expect(matchesAlertQuery(aapl, "apple")).toBe(true);
+    expect(matchesAlertQuery(aapl, "inc")).toBe(true);
+    expect(matchesAlertQuery(aapl, "microsoft")).toBe(false);
+  });
+
+  it("falls back to symbol-only match when name is unavailable (null)", () => {
+    const noName = { symbol: "AAPL", name: null };
+    expect(matchesAlertQuery(noName, "aapl")).toBe(true);
+    expect(matchesAlertQuery(noName, "apple")).toBe(false);
   });
 });
 

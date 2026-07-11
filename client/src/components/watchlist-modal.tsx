@@ -1,13 +1,15 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { X, Plus } from "lucide-react";
+import { X, Plus, Star } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { Watchlist, StockSearchResult } from "@shared/schema";
+import { StockSearchResult } from "@shared/schema";
+import { useWatchlistMembership } from "@/hooks/use-watchlist-membership";
+import { cn } from "@/lib/utils";
 
 interface WatchlistModalProps {
   isOpen: boolean;
@@ -21,10 +23,11 @@ export default function WatchlistModal({ isOpen, onClose, stock }: WatchlistModa
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: watchlists } = useQuery<Watchlist[]>({
-    queryKey: ["/api/watchlists"],
-    enabled: isOpen,
-  });
+  const { entries } = useWatchlistMembership(stock.symbol, isOpen);
+
+  const invalidateItems = (watchlistId: number) => {
+    queryClient.invalidateQueries({ queryKey: [`/api/watchlists/${watchlistId}/items`] });
+  };
 
   const createWatchlistMutation = useMutation({
     mutationFn: async (name: string) => {
@@ -56,20 +59,39 @@ export default function WatchlistModal({ isOpen, onClose, stock }: WatchlistModa
         name: stock.name,
         exchange: stock.exchange,
       });
-      return response.json();
+      return { watchlistId, body: await response.json() };
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/watchlists"] });
+    onSuccess: ({ watchlistId }) => {
+      invalidateItems(watchlistId);
       toast({
         title: "Added to Watchlist",
         description: `${stock.name} has been added to your watchlist.`,
       });
-      onClose();
     },
     onError: (error: any) => {
       toast({
         title: "Error",
         description: error.message || "Failed to add stock to watchlist.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const removeFromWatchlistMutation = useMutation({
+    mutationFn: async ({ itemId }: { itemId: number; watchlistId: number }) => {
+      await apiRequest("DELETE", `/api/watchlists/items/${itemId}`);
+    },
+    onSuccess: (_data, { watchlistId }) => {
+      invalidateItems(watchlistId);
+      toast({
+        title: "Removed from Watchlist",
+        description: `${stock.name} has been removed from that watchlist.`,
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to remove stock from watchlist.",
         variant: "destructive",
       });
     },
@@ -82,9 +104,15 @@ export default function WatchlistModal({ isOpen, onClose, stock }: WatchlistModa
     }
   };
 
-  const handleAddToWatchlist = (watchlistId: number) => {
-    addToWatchlistMutation.mutate(watchlistId);
+  const handleToggleWatchlist = (watchlistId: number, itemId: number | null) => {
+    if (itemId != null) {
+      removeFromWatchlistMutation.mutate({ itemId, watchlistId });
+    } else {
+      addToWatchlistMutation.mutate(watchlistId);
+    }
   };
+
+  const isToggling = addToWatchlistMutation.isPending || removeFromWatchlistMutation.isPending;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -109,18 +137,29 @@ export default function WatchlistModal({ isOpen, onClose, stock }: WatchlistModa
           {!showCreateForm && (
             <>
               <div className="space-y-3">
-                {watchlists?.map((watchlist) => (
+                {entries.map(({ watchlist, item }) => (
                   <Button
                     key={watchlist.id}
                     variant="outline"
-                    className="w-full justify-start text-left bg-background border-border hover:border-primary"
-                    onClick={() => handleAddToWatchlist(watchlist.id)}
-                    disabled={addToWatchlistMutation.isPending}
+                    className={cn(
+                      "w-full justify-between text-left bg-background border-border hover:border-primary",
+                      item != null && "border-yellow-400/50",
+                    )}
+                    onClick={() => handleToggleWatchlist(watchlist.id, item?.id ?? null)}
+                    disabled={isToggling}
                   >
                     <div>
                       <div className="font-medium">{watchlist.name}</div>
-                      <div className="text-sm text-muted-foreground">Click to add</div>
+                      <div className="text-sm text-muted-foreground">
+                        {item != null ? "Presente — clicca per rimuovere" : "Clicca per aggiungere"}
+                      </div>
                     </div>
+                    <Star
+                      className={cn(
+                        "w-4 h-4 shrink-0",
+                        item != null ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground",
+                      )}
+                    />
                   </Button>
                 ))}
               </div>

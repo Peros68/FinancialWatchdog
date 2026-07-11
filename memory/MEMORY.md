@@ -206,6 +206,63 @@ Finnhub + Yahoo proxy · porta 5000 (API + client serviti insieme).
 - **GATE APERTO: `npm run db:push` NON eseguito** (conferma utente richiesta). Senza push i
   drawings funzionano solo su MemStorage; su Postgres la tabella non esiste ancora.
 
+## UX: stella watchlist, timeframe 3M/6M, filtro Alert (2026-07-11, FATTI)
+- Stella su stock-detail gialla se il titolo è in ≥1 watchlist; click apre `WatchlistModal` con
+  TUTTE le watchlist e stato selezionato/non selezionato, toggle add/remove diretto. Nuovo hook
+  `client/src/hooks/use-watchlist-membership.ts` (riusa endpoint esistenti, no nuova API).
+- Timeframe grafico: aggiunti `3Mo`/`6Mo` (label 3M/6M) tra 1M e 1A in `stock-chart.tsx` +
+  `chart-axis.ts` (granularità "day" come 1Mo). Ordine finale 15m,1H,1G,1S,1M,3M,6M,1A,5A.
+- Filtro Alert (aggiunto stesso giorno, poi corretto): cerca per simbolo **e** nome società via
+  `matchesAlertQuery` (puro, testato), nome recuperato da `/api/stocks/profile/:symbol` (stesso
+  dato di Search Stocks, no nuova dipendenza).
+- Verde dopo le 3 modifiche: check 0 · lint 0 · Vitest 94/94 · build OK. Dettaglio completo in
+  `Docs/HANDOVER.md` §5.
+- **Requisito mobile REGISTRATO, non implementato**: vista smartphone deve avere layout dedicato
+  (header/testi compatti, meno spazio verticale, grafico più grande). Riferimento
+  `Docs/img/v1.jpeg`: barra timeframe va in overflow orizzontale su mobile ("5A" tagliato).
+  Utente ha chiesto di NON fare app nativa/PWA ora — prima proporre miglioramento responsive
+  minimo. Dettaglio in `Docs/HANDOVER.md` §5.
+
+## Bug: alert duplicati/orfani da toggleArm + key React non univoca (2026-07-11, FATTO)
+- **Sintomo riportato dall'utente**: nella pagina Alert comparivano 2 alert IBM non creati
+  consapevolmente, e il filtro "hp" lasciava visibile anche IBM (che non dovrebbe combaciare:
+  predicato `matchesAlertQuery` verificato corretto via unit test e via chiamata reale a
+  `/api/stocks/profile/IBM` → "International Business Machines Corporation", nessuna
+  sottostringa "hp").
+- **Causa dati (verificata sui dati reali in MemStorage locale)**: 2 righe alert reali per IBM
+  (id 1 e 2, `below`, prezzi 269.89/276.23, creati 13s l'uno dall'altro) — prezzi con 4 decimali
+  = firma della proiezione `alertPriceFor` del disegno sul grafico (bell/campanella), non
+  inserimento manuale. Causa nel codice: `toggleArm` (`client/src/components/stock-chart.tsx`)
+  aggiornava lo stato locale `armed`/`alertId` **in modo ottimistico PRIMA** che la chiamata
+  DELETE (disarmo) o POST (armo) fosse confermata dal server, e ingoiava silenziosamente gli
+  errori (`catch { /* non-fatal */ }`) senza rollback né toast. Se un disarmo falliva
+  lato server, l'utente vedeva la linea disarmata ma l'alert restava vivo nel backend; un
+  successivo riarmo creava un NUOVO alert, lasciando quello vecchio come "fantasma" — invisibile
+  al disegno ma sempre listato da `GET /api/alerts` (che non ha alcun concetto di "alert ancora
+  collegato a un disegno vivo").
+- **Causa render (bug distinto, confermato nel codice)**: `client/src/pages/alerts.tsx` usava
+  `key={alert.symbol}` nella lista — non univoca quando 2 alert condividono lo stesso simbolo
+  (proprio il caso IBM). Con `key` duplicate, la reconciliation di React su un cambio di lista
+  (es. il filtro che rimuove IBM) può lasciare un nodo DOM "fantasma" invece di rimuoverlo —
+  spiega "il filtro hp lascia visibile anche IBM" SENZA che il predicato sia sbagliato.
+- **Fix applicati**: (a) `key={alert.id}` (univoca per record) in `alerts.tsx`; (b) `toggleArm`
+  ora aggiorna `armed`/`alertId` locale SOLO dopo conferma server (sia su armo che su disarmo),
+  e mostra un toast d'errore esplicito se il DELETE di disarmo fallisce (niente più
+  rollback silenzioso/divergenza stato client-server).
+- **Pulizia fatta 2026-07-11**: i 2 record IBM duplicati/orfani cancellati via
+  `DELETE /api/alerts/:id` (id 1 e 2), SOLO storage locale MemStorage di test, nessuna chiamata
+  verso Render/Supabase.
+- Verde dopo il fix: check 0 · lint 0 · Vitest 94/94 · build OK.
+
+## Watchlist: bidone → stella (2026-07-11, FATTO)
+- `client/src/pages/watchlist.tsx` (`WatchlistItemCard`): sostituita l'icona `Trash2` con una
+  stella gialla piena (`fill-yellow-400`) — coerente con la convenzione "presente = stella
+  piena" già usata in `WatchlistModal` e Search Stocks (qui sempre presente, dato che la card è
+  dentro la lista items di quella watchlist). Click = rimuove il titolo (stessa mutation di
+  prima, nessun cambio di logica). `Trash2` resta solo sul pulsante "Elimina watchlist" (azione
+  distinta). Filtro Alert non toccato su richiesta esplicita. Verde: check 0 · lint 0 ·
+  Vitest 94/94 · build OK.
+
 ## Qualità
 ESLint 0 · Vitest 89/89 (health, storage, mapping+trigger, alert-scheduler, alert-reprojector,
 watchlist/alerts/drawings API, marketData, fundamentals, candles, chart-axis, chart-drawings) ·
@@ -355,9 +412,27 @@ Dettaglio in `Docs/CHANGELOG_DECISIONS.md`.
 - Keepalive: `.github/workflows/keepalive.yml` (commit `e3b23b9`, già in `main`) — ping
   `/api/health` ogni 10 min, Lun-Ven 07:00-21:50 UTC. Repository variable `RENDER_HEALTH_URL`
   configurata; run manuale "Keep Render awake (market hours)": **Success**.
-- **Aperto:** schema su Supabase non verificato in questa sessione (nessun `db:push` puntato a
-  Supabase eseguito qui); destino del Render Postgres di prova inutilizzato.
+- **Aperto:** destino del Render Postgres di prova inutilizzato (da decidere se dismetterlo).
 - **D4 (decisioni consolidate 2026-06-21) è ora FATTA**, non più "solo locale/no cloud".
+
+### Verifica schema Supabase — COMPLETATA 2026-07-11 (schema applicato + persistenza live OK)
+- **Schema locale Drizzle atteso** (`shared/schema.ts`): 5 tabelle — `users`, `watchlists`,
+  `watchlist_items`, `alerts`, `drawings` (quest'ultima = Modello C, con `alert_id` FK
+  `on delete set null`). Nessuna cartella `migrations/` in repo: il progetto lavora via
+  `drizzle-kit push` diretto (niente migration history tracciata).
+- Script read-only `_tmp_check_schema.mjs` (introspezione `information_schema`) → **pre-push
+  tutte e 5 le tabelle MANCANTI** su Supabase (schema mai applicato).
+- **`db:push` + `db:seed` eseguiti dall'utente** (conferma esplicita, comando lanciato nel suo
+  terminale — mai passata `DATABASE_URL` in chat): `"Changes applied"` + seed utente
+  `default` (id=1) + 3 watchlist.
+- **Persistenza live confermata** (curl pubblici, script unico `_tmp_live_test.sh`): dati seed
+  sopravvivono a un riavvio a freddo del processo Render (`uptime` 13s ma `createdAt` = istante
+  seed) → storage reale = Supabase. Round-trip scrittura/lettura OK su watchlist item e alert
+  (POST poi GET → identici). **Pattern per i segreti**: quando serve la `DATABASE_URL` reale,
+  farla incollare/eseguire all'utente nel SUO terminale (mai `!` in chat, mai stampata) — usato
+  con successo sia per l'introspezione read-only sia per `db:push`/`db:seed`.
+- **Nota API**: `POST /api/alerts` vuole `targetPrice` numerico, non stringa (altrimenti 400).
+- Dettaglio completo in `Docs/HANDOVER.md` §9.
 
 ## Authorization Judge v2 ATTIVO (2026-07-10, F.2/F.3 fatte — CANARY F.4 in corso)
 - v2 = classificazione deterministica context-aware: quote-masking (P1), per-segmento con

@@ -29,6 +29,8 @@ const GRANULARITY: Record<string, AxisGranularity> = {
   "1D": "time", // 1G → ore (time-of-day)
   "1W": "day",
   "1Mo": "day",
+  "3Mo": "day",
+  "6Mo": "day",
   "1Y": "month", // 1A → mesi
   "5Y": "year", // 5A → anni
 };

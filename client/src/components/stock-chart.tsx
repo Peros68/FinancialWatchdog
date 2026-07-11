@@ -70,13 +70,15 @@ interface StockChartProps {
 }
 
 // Quick period selectors. Convention: minuti in minuscolo (15m); dall'ora in su
-// lettera maiuscola (1H ora, 1G giorno, 1S settimana, 1M mese, 1A anno).
+// lettera maiuscola (1H ora, 1G giorno, 1S settimana, 1M mese, 3M/6M mesi, 1A anno).
 const quickTimeframes = [
   { label: "15m", value: "15m" },
   { label: "1H", value: "1h" },
   { label: "1G", value: "1D" },
   { label: "1S", value: "1W" },
   { label: "1M", value: "1Mo" },
+  { label: "3M", value: "3Mo" },
+  { label: "6M", value: "6Mo" },
   { label: "1A", value: "1Y" }, // default
   { label: "5A", value: "5Y" },
 ];
@@ -91,6 +93,8 @@ const allTimeframes = [
   { label: "1 Giorno", value: "1D" },
   { label: "1 Settimana", value: "1W" },
   { label: "1 Mese", value: "1Mo" },
+  { label: "3 Mesi", value: "3Mo" },
+  { label: "6 Mesi", value: "6Mo" },
   { label: "1 Anno", value: "1Y" },
   { label: "5 Anni", value: "5Y" },
 ];
@@ -295,6 +299,8 @@ export default function StockChart({ symbol, currentPrice }: StockChartProps) {
           case '1D': return { interval: '5m', range: '1d' };   // 1 giorno (intraday)
           case '1W': return { interval: '60m', range: '5d' };  // 1 settimana
           case '1Mo': return { interval: '1d', range: '1mo' }; // 1 mese
+          case '3Mo': return { interval: '1d', range: '3mo' }; // 3 mesi
+          case '6Mo': return { interval: '1d', range: '6mo' }; // 6 mesi
           case '1Y': return { interval: '1d', range: '1y' };   // 1 anno
           case '5Y': return { interval: '1wk', range: '5y' };  // 5 anni
           default: return { interval: '1d', range: '1y' };
@@ -607,22 +613,35 @@ export default function StockChart({ symbol, currentPrice }: StockChartProps) {
     const target = drawings.find((d) => d.id === id);
     if (!target || target.kind === "vertical") return;
     if (target.armed) {
-      setDrawings((prev) => prev.map((d) => (d.id === id ? { ...d, armed: false, alertId: undefined } : d)));
-      if (target.alertId) {
-        try {
-          // Deleting the alert also disarms the persisted drawing (FK set null).
-          await apiRequest("DELETE", `/api/alerts/${target.alertId}`, undefined);
-          invalidateAlerts();
-          invalidateDrawings();
-        } catch {
-          /* non-fatal */
-        }
+      if (!target.alertId) {
+        // Armed locally with no persisted alert (shouldn't normally happen) — just clear it.
+        setDrawings((prev) => prev.map((d) => (d.id === id ? { ...d, armed: false, alertId: undefined } : d)));
+        return;
+      }
+      try {
+        // Deleting the alert also disarms the persisted drawing (FK set null).
+        // Only clear the local armed state AFTER the delete succeeds: flipping it
+        // optimistically before the request settles let a failed delete leave the
+        // alert orphaned server-side (invisible here, but still listed on the
+        // Alerts page) while the user believed the line was disarmed.
+        await apiRequest("DELETE", `/api/alerts/${target.alertId}`, undefined);
+        setDrawings((prev) => prev.map((d) => (d.id === id ? { ...d, armed: false, alertId: undefined } : d)));
+        invalidateAlerts();
+        invalidateDrawings();
+      } catch {
+        toast({
+          title: "Errore",
+          description: "Impossibile disarmare l'alert. La linea resta armata.",
+          variant: "destructive",
+        });
       }
     } else {
-      setDrawings((prev) => prev.map((d) => (d.id === id ? { ...d, armed: true } : d)));
+      // Same reasoning as above: only mark the line armed once createAlertFor
+      // actually returns a persisted alert id, otherwise a failed POST would
+      // leave the bell showing "armed" with no alert behind it.
       const alertId = await createAlertFor(target);
       if (alertId) {
-        setDrawings((prev) => prev.map((d) => (d.id === id ? { ...d, alertId } : d)));
+        setDrawings((prev) => prev.map((d) => (d.id === id ? { ...d, armed: true, alertId } : d)));
         if (target.dbId) {
           try {
             // Link the alert to the drawing; the server re-projects the target
