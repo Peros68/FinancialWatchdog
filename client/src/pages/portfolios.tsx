@@ -17,7 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Trash2, Briefcase } from "lucide-react";
+import { Plus, Trash2, Briefcase, Pencil } from "lucide-react";
 import { Link } from "wouter";
 import type { Portfolio, PortfolioHolding, StockSearchResult } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
@@ -30,6 +30,7 @@ import PortfolioBuyForm, { type BuyStock } from "@/components/portfolio-buy-form
 export default function PortfoliosPage() {
   const [activeId, setActiveId] = useState<number | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
   const [showAddPosition, setShowAddPosition] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -84,6 +85,10 @@ export default function PortfoliosPage() {
                   <Button variant="outline" onClick={() => setShowAddPosition(true)}>
                     <Plus className="w-4 h-4 mr-2" />
                     Aggiungi posizione
+                  </Button>
+                  <Button variant="outline" onClick={() => setShowEdit(true)}>
+                    <Pencil className="w-4 h-4 mr-2" />
+                    Modifica
                   </Button>
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
@@ -186,6 +191,15 @@ export default function PortfoliosPage() {
         <AddPositionDialog
           open={showAddPosition}
           onOpenChange={setShowAddPosition}
+          portfolio={active}
+        />
+      )}
+
+      {active && (
+        <EditPortfolioDialog
+          key={active.id}
+          open={showEdit}
+          onOpenChange={setShowEdit}
           portfolio={active}
         />
       )}
@@ -336,6 +350,140 @@ function CreatePortfolioDialog({
               disabled={createMutation.isPending || !name.trim() || !baseCurrency.trim()}
             >
               {createMutation.isPending ? "Creazione..." : "Crea"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditPortfolioDialog({
+  open,
+  onOpenChange,
+  portfolio,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  portfolio: Portfolio;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [name, setName] = useState(portfolio.name);
+  const [baseCurrency, setBaseCurrency] = useState(portfolio.baseCurrency);
+  const [multiCurrency, setMultiCurrency] = useState(portfolio.multiCurrency);
+  const [feeEuPct, setFeeEuPct] = useState(String(portfolio.feeEuPct));
+  const [feeEuFixed, setFeeEuFixed] = useState(String(portfolio.feeEuFixed));
+  const [feeUsaPct, setFeeUsaPct] = useState(String(portfolio.feeUsaPct));
+  const [feeUsaFixed, setFeeUsaFixed] = useState(String(portfolio.feeUsaFixed));
+
+  // Re-sync the form to the current portfolio whenever the dialog is (re)opened,
+  // so an abandoned edit doesn't linger.
+  useEffect(() => {
+    if (open) {
+      setName(portfolio.name);
+      setBaseCurrency(portfolio.baseCurrency);
+      setMultiCurrency(portfolio.multiCurrency);
+      setFeeEuPct(String(portfolio.feeEuPct));
+      setFeeEuFixed(String(portfolio.feeEuFixed));
+      setFeeUsaPct(String(portfolio.feeUsaPct));
+      setFeeUsaFixed(String(portfolio.feeUsaFixed));
+    }
+  }, [open, portfolio]);
+
+  const num = (v: string) => {
+    const n = parseFloat(v.replace(",", "."));
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const updateMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("PUT", `/api/portfolios/${portfolio.id}`, {
+        name: name.trim(),
+        baseCurrency: baseCurrency.trim().toUpperCase(),
+        multiCurrency,
+        feeEuPct: num(feeEuPct),
+        feeEuFixed: num(feeEuFixed),
+        feeUsaPct: num(feeUsaPct),
+        feeUsaFixed: num(feeUsaFixed),
+      });
+      return res.json() as Promise<Portfolio>;
+    },
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/portfolios"] });
+      onOpenChange(false);
+      toast({ title: "Portafoglio aggiornato", description: `"${updated.name}" salvato.` });
+    },
+    onError: (err: any) => {
+      // apiRequest throws `${status}: ${rawBody}` — surface the server's clear message.
+      let description = "Impossibile aggiornare il portafoglio.";
+      const m = /^\d+:\s*([\s\S]*)$/.exec(err?.message ?? "");
+      if (m) {
+        try {
+          description = JSON.parse(m[1])?.error ?? m[1];
+        } catch {
+          description = m[1] || description;
+        }
+      }
+      toast({ title: "Modifica non consentita", description, variant: "destructive" });
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Modifica portafoglio</DialogTitle>
+        </DialogHeader>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (name.trim() && baseCurrency.trim()) updateMutation.mutate();
+          }}
+          className="space-y-4"
+        >
+          <div className="space-y-2">
+            <Label htmlFor="pf-edit-name">Nome</Label>
+            <Input id="pf-edit-name" value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 items-end">
+            <div className="space-y-2">
+              <Label htmlFor="pf-edit-currency">Valuta base</Label>
+              <Input id="pf-edit-currency" value={baseCurrency} onChange={(e) => setBaseCurrency(e.target.value)} placeholder="EUR" required />
+            </div>
+            <div className="flex items-center justify-between rounded-md border border-border p-3">
+              <Label htmlFor="pf-edit-multi" className="text-sm">Multivaluta</Label>
+              <Switch id="pf-edit-multi" checked={multiCurrency} onCheckedChange={setMultiCurrency} />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-sm text-muted-foreground">Commissioni EU (% + fisso)</Label>
+            <div className="grid grid-cols-2 gap-3">
+              <Input inputMode="decimal" value={feeEuPct} onChange={(e) => setFeeEuPct(e.target.value)} placeholder="% es. 0.19" />
+              <Input inputMode="decimal" value={feeEuFixed} onChange={(e) => setFeeEuFixed(e.target.value)} placeholder="fisso" />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-sm text-muted-foreground">Commissioni USA (% + fisso)</Label>
+            <div className="grid grid-cols-2 gap-3">
+              <Input inputMode="decimal" value={feeUsaPct} onChange={(e) => setFeeUsaPct(e.target.value)} placeholder="% es. 0.19" />
+              <Input inputMode="decimal" value={feeUsaFixed} onChange={(e) => setFeeUsaFixed(e.target.value)} placeholder="fisso" />
+            </div>
+          </div>
+
+          <div className="flex space-x-3">
+            <Button type="button" variant="outline" className="flex-1" onClick={() => onOpenChange(false)}>
+              Annulla
+            </Button>
+            <Button
+              type="submit"
+              className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
+              disabled={updateMutation.isPending || !name.trim() || !baseCurrency.trim()}
+            >
+              {updateMutation.isPending ? "Salvataggio..." : "Salva"}
             </Button>
           </div>
         </form>

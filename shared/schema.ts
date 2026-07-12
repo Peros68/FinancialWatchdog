@@ -174,6 +174,18 @@ export const insertHoldingSchema = createInsertSchema(portfolioHoldings).pick({
   totalCost: true,
 });
 
+// Editable portfolio fields (name, base currency, multi-currency flag and the
+// EU/USA commission config). userId is intentionally not editable.
+export const updatePortfolioSchema = z.object({
+  name: z.string().trim().min(1).optional(),
+  baseCurrency: z.string().trim().min(1).max(8).optional(),
+  multiCurrency: z.boolean().optional(),
+  feeEuPct: z.number().nonnegative().optional(),
+  feeEuFixed: z.number().nonnegative().optional(),
+  feeUsaPct: z.number().nonnegative().optional(),
+  feeUsaFixed: z.number().nonnegative().optional(),
+});
+
 // Buy instruction from the client (add-to-portfolio popup). When feesIncluded is
 // true (importing an existing real position whose average already includes costs)
 // the server forces commission to 0 and treats `price` as the all-in average.
@@ -247,6 +259,7 @@ export type InsertAlert = z.infer<typeof insertAlertSchema>;
 
 export type Portfolio = typeof portfolios.$inferSelect;
 export type InsertPortfolio = z.infer<typeof insertPortfolioSchema>;
+export type UpdatePortfolio = z.infer<typeof updatePortfolioSchema>;
 
 export type PortfolioHolding = typeof portfolioHoldings.$inferSelect;
 export type InsertHolding = z.infer<typeof insertHoldingSchema>;

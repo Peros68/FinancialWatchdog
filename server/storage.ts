@@ -49,6 +49,7 @@ export interface IStorage {
   getPortfolios(userId: number): Promise<Portfolio[]>;
   getPortfolio(id: number): Promise<Portfolio | undefined>;
   createPortfolio(portfolio: InsertPortfolio): Promise<Portfolio>;
+  updatePortfolio(id: number, updates: Partial<Portfolio>): Promise<Portfolio | undefined>;
   deletePortfolio(id: number): Promise<void>;
 
   // Portfolio holding operations (aggregated position per symbol)
@@ -292,6 +293,14 @@ export class MemStorage implements IStorage {
     return portfolio;
   }
 
+  async updatePortfolio(id: number, updates: Partial<Portfolio>): Promise<Portfolio | undefined> {
+    const portfolio = this.portfolios.get(id);
+    if (!portfolio) return undefined;
+    const updated = { ...portfolio, ...updates };
+    this.portfolios.set(id, updated);
+    return updated;
+  }
+
   async deletePortfolio(id: number): Promise<void> {
     this.portfolios.delete(id);
     // Cascade to holdings, mirroring the DB FK on delete.
@@ -498,6 +507,15 @@ export class DatabaseStorage implements IStorage {
   async createPortfolio(insert: InsertPortfolio): Promise<Portfolio> {
     const [portfolio] = await db.insert(portfolios).values(insert).returning();
     return portfolio;
+  }
+
+  async updatePortfolio(id: number, updates: Partial<Portfolio>): Promise<Portfolio | undefined> {
+    const [portfolio] = await db
+      .update(portfolios)
+      .set(updates)
+      .where(eq(portfolios.id, id))
+      .returning();
+    return portfolio || undefined;
   }
 
   async deletePortfolio(id: number): Promise<void> {

@@ -8,6 +8,7 @@ import {
   insertDrawingSchema,
   updateDrawingSchema,
   insertPortfolioSchema,
+  updatePortfolioSchema,
   addHoldingSchema,
 } from "@shared/schema";
 import { classifyMarket, commissionFor, applyBuy } from "@shared/portfolio";
@@ -231,6 +232,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(portfolio);
     } catch {
       res.status(500).json({ error: "Failed to create portfolio" });
+    }
+  });
+
+  app.put("/api/portfolios/:id", async (req, res) => {
+    try {
+      const validation = updatePortfolioSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ error: validation.error.issues });
+      }
+      const id = parseInt(req.params.id);
+      const updates = validation.data;
+
+      const current = await storage.getPortfolio(id);
+      if (!current) {
+        return res.status(404).json({ error: "Portfolio not found" });
+      }
+
+      // Consistency guard: a portfolio that ends up NON multi-currency must hold
+      // only its (possibly new) base currency. This blocks both turning
+      // multiCurrency off and changing the base currency while positions in a
+      // different currency exist.
+      const nextBase = (updates.baseCurrency ?? current.baseCurrency).toUpperCase();
+      const nextMulti = updates.multiCurrency ?? current.multiCurrency;
+      if (!nextMulti) {
+        const holdings = await storage.getHoldings(id);
+        const foreign = Array.from(
+          new Set(
+            holdings
+              .map((h) => h.currency?.toUpperCase())
+              .filter((c): c is string => !!c && c !== nextBase),
+          ),
+        );
+        if (foreign.length > 0) {
+          return res.status(400).json({
+            error: `Operazione non consentita: il portafoglio ha posizioni in ${foreign.join(", ")}, diverse dalla valuta base ${nextBase}. Mantieni il portafoglio multivaluta oppure rimuovi/converti prima quelle posizioni.`,
+          });
+        }
+      }
+
+      const portfolio = Object.keys(updates).length === 0
+        ? current
+        : await storage.updatePortfolio(id, updates);
+      if (!portfolio) {
+        return res.status(404).json({ error: "Portfolio not found" });
+      }
+      res.json(portfolio);
+    } catch {
+      res.status(500).json({ error: "Failed to update portfolio" });
     }
   });
 
