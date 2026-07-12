@@ -1,10 +1,12 @@
 import {
-  users, watchlists, watchlistItems, alerts, drawings,
+  users, watchlists, watchlistItems, alerts, drawings, portfolios, portfolioHoldings,
   type User, type InsertUser,
   type Watchlist, type InsertWatchlist,
   type WatchlistItem, type InsertWatchlistItem,
   type Alert, type InsertAlert,
-  type ChartDrawing, type InsertDrawing
+  type ChartDrawing, type InsertDrawing,
+  type Portfolio, type InsertPortfolio,
+  type PortfolioHolding, type InsertHolding
 } from "@shared/schema";
 
 export interface IStorage {
@@ -42,6 +44,19 @@ export interface IStorage {
   deleteDrawing(id: number): Promise<void>;
   /** Drawings linked to an alert (candidates for the daily reprojection). */
   getArmedDrawings(): Promise<ChartDrawing[]>;
+
+  // Portfolio operations
+  getPortfolios(userId: number): Promise<Portfolio[]>;
+  getPortfolio(id: number): Promise<Portfolio | undefined>;
+  createPortfolio(portfolio: InsertPortfolio): Promise<Portfolio>;
+  deletePortfolio(id: number): Promise<void>;
+
+  // Portfolio holding operations (aggregated position per symbol)
+  getHoldings(portfolioId: number): Promise<PortfolioHolding[]>;
+  getHoldingBySymbol(portfolioId: number, symbol: string): Promise<PortfolioHolding | undefined>;
+  createHolding(holding: InsertHolding): Promise<PortfolioHolding>;
+  updateHolding(id: number, updates: Partial<PortfolioHolding>): Promise<PortfolioHolding | undefined>;
+  removeHolding(id: number): Promise<void>;
 }
 
 export class MemStorage implements IStorage {
@@ -50,11 +65,15 @@ export class MemStorage implements IStorage {
   private watchlistItems: Map<number, WatchlistItem>;
   private alerts: Map<number, Alert>;
   private drawings: Map<number, ChartDrawing>;
+  private portfolios: Map<number, Portfolio>;
+  private holdings: Map<number, PortfolioHolding>;
   private currentUserId: number;
   private currentWatchlistId: number;
   private currentWatchlistItemId: number;
   private currentAlertId: number;
   private currentDrawingId: number;
+  private currentPortfolioId: number;
+  private currentHoldingId: number;
 
   constructor() {
     this.users = new Map();
@@ -62,11 +81,15 @@ export class MemStorage implements IStorage {
     this.watchlistItems = new Map();
     this.alerts = new Map();
     this.drawings = new Map();
+    this.portfolios = new Map();
+    this.holdings = new Map();
     this.currentUserId = 1;
     this.currentWatchlistId = 1;
     this.currentWatchlistItemId = 1;
     this.currentAlertId = 1;
     this.currentDrawingId = 1;
+    this.currentPortfolioId = 1;
+    this.currentHoldingId = 1;
 
     // Create default user and watchlists
     this.initializeDefaultData();
@@ -244,6 +267,76 @@ export class MemStorage implements IStorage {
   async getArmedDrawings(): Promise<ChartDrawing[]> {
     return Array.from(this.drawings.values()).filter(d => d.alertId != null);
   }
+
+  async getPortfolios(userId: number): Promise<Portfolio[]> {
+    return Array.from(this.portfolios.values()).filter(p => p.userId === userId);
+  }
+
+  async getPortfolio(id: number): Promise<Portfolio | undefined> {
+    return this.portfolios.get(id);
+  }
+
+  async createPortfolio(insert: InsertPortfolio): Promise<Portfolio> {
+    const id = this.currentPortfolioId++;
+    const portfolio: Portfolio = {
+      ...insert,
+      id,
+      multiCurrency: insert.multiCurrency ?? false,
+      feeEuPct: insert.feeEuPct ?? 0,
+      feeEuFixed: insert.feeEuFixed ?? 0,
+      feeUsaPct: insert.feeUsaPct ?? 0,
+      feeUsaFixed: insert.feeUsaFixed ?? 0,
+      createdAt: new Date(),
+    };
+    this.portfolios.set(id, portfolio);
+    return portfolio;
+  }
+
+  async deletePortfolio(id: number): Promise<void> {
+    this.portfolios.delete(id);
+    // Cascade to holdings, mirroring the DB FK on delete.
+    Array.from(this.holdings.entries()).forEach(([holdingId, holding]) => {
+      if (holding.portfolioId === id) {
+        this.holdings.delete(holdingId);
+      }
+    });
+  }
+
+  async getHoldings(portfolioId: number): Promise<PortfolioHolding[]> {
+    return Array.from(this.holdings.values()).filter(h => h.portfolioId === portfolioId);
+  }
+
+  async getHoldingBySymbol(portfolioId: number, symbol: string): Promise<PortfolioHolding | undefined> {
+    return Array.from(this.holdings.values()).find(
+      h => h.portfolioId === portfolioId && h.symbol === symbol,
+    );
+  }
+
+  async createHolding(insert: InsertHolding): Promise<PortfolioHolding> {
+    const id = this.currentHoldingId++;
+    const now = new Date();
+    const holding: PortfolioHolding = {
+      ...insert,
+      id,
+      currency: insert.currency ?? null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.holdings.set(id, holding);
+    return holding;
+  }
+
+  async updateHolding(id: number, updates: Partial<PortfolioHolding>): Promise<PortfolioHolding | undefined> {
+    const holding = this.holdings.get(id);
+    if (!holding) return undefined;
+    const updated = { ...holding, ...updates, updatedAt: new Date() };
+    this.holdings.set(id, updated);
+    return updated;
+  }
+
+  async removeHolding(id: number): Promise<void> {
+    this.holdings.delete(id);
+  }
 }
 
 import { db } from "./db";
@@ -391,6 +484,56 @@ export class DatabaseStorage implements IStorage {
 
   async getArmedDrawings(): Promise<ChartDrawing[]> {
     return await db.select().from(drawings).where(isNotNull(drawings.alertId));
+  }
+
+  async getPortfolios(userId: number): Promise<Portfolio[]> {
+    return await db.select().from(portfolios).where(eq(portfolios.userId, userId));
+  }
+
+  async getPortfolio(id: number): Promise<Portfolio | undefined> {
+    const [portfolio] = await db.select().from(portfolios).where(eq(portfolios.id, id));
+    return portfolio || undefined;
+  }
+
+  async createPortfolio(insert: InsertPortfolio): Promise<Portfolio> {
+    const [portfolio] = await db.insert(portfolios).values(insert).returning();
+    return portfolio;
+  }
+
+  async deletePortfolio(id: number): Promise<void> {
+    // Remove child holdings first, mirroring MemStorage's cascade.
+    await db.delete(portfolioHoldings).where(eq(portfolioHoldings.portfolioId, id));
+    await db.delete(portfolios).where(eq(portfolios.id, id));
+  }
+
+  async getHoldings(portfolioId: number): Promise<PortfolioHolding[]> {
+    return await db.select().from(portfolioHoldings).where(eq(portfolioHoldings.portfolioId, portfolioId));
+  }
+
+  async getHoldingBySymbol(portfolioId: number, symbol: string): Promise<PortfolioHolding | undefined> {
+    const [holding] = await db
+      .select()
+      .from(portfolioHoldings)
+      .where(and(eq(portfolioHoldings.portfolioId, portfolioId), eq(portfolioHoldings.symbol, symbol)));
+    return holding || undefined;
+  }
+
+  async createHolding(insert: InsertHolding): Promise<PortfolioHolding> {
+    const [holding] = await db.insert(portfolioHoldings).values(insert).returning();
+    return holding;
+  }
+
+  async updateHolding(id: number, updates: Partial<PortfolioHolding>): Promise<PortfolioHolding | undefined> {
+    const [holding] = await db
+      .update(portfolioHoldings)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(portfolioHoldings.id, id))
+      .returning();
+    return holding || undefined;
+  }
+
+  async removeHolding(id: number): Promise<void> {
+    await db.delete(portfolioHoldings).where(eq(portfolioHoldings.id, id));
   }
 }
 

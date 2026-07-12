@@ -7,7 +7,10 @@ import {
   insertAlertSchema,
   insertDrawingSchema,
   updateDrawingSchema,
+  insertPortfolioSchema,
+  addHoldingSchema,
 } from "@shared/schema";
+import { classifyMarket, commissionFor, applyBuy } from "@shared/portfolio";
 import { marketData } from "./marketData";
 import { reprojectOnce } from "./alertReprojector";
 import { getPreferredProvider, setPreferredProvider, isValidPreference } from "./settings";
@@ -205,6 +208,115 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch {
       res.status(500).json({ error: "Failed to remove item from watchlist" });
+    }
+  });
+
+  // Portfolio endpoints
+  app.get("/api/portfolios", async (_req, res) => {
+    try {
+      const list = await storage.getPortfolios(defaultUserId);
+      res.json(list);
+    } catch {
+      res.status(500).json({ error: "Failed to get portfolios" });
+    }
+  });
+
+  app.post("/api/portfolios", async (req, res) => {
+    try {
+      const validation = insertPortfolioSchema.safeParse({ ...req.body, userId: defaultUserId });
+      if (!validation.success) {
+        return res.status(400).json({ error: validation.error.issues });
+      }
+      const portfolio = await storage.createPortfolio(validation.data);
+      res.json(portfolio);
+    } catch {
+      res.status(500).json({ error: "Failed to create portfolio" });
+    }
+  });
+
+  app.delete("/api/portfolios/:id", async (req, res) => {
+    try {
+      await storage.deletePortfolio(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch {
+      res.status(500).json({ error: "Failed to delete portfolio" });
+    }
+  });
+
+  app.get("/api/portfolios/:id/holdings", async (req, res) => {
+    try {
+      const holdings = await storage.getHoldings(parseInt(req.params.id));
+      res.json(holdings);
+    } catch {
+      res.status(500).json({ error: "Failed to get holdings" });
+    }
+  });
+
+  // Add a position (buy). If the symbol already exists, quantity and average
+  // price are recomputed (fees included). feesIncluded=true imports an existing
+  // real position: commission is forced to 0 and `price` is the all-in average.
+  app.post("/api/portfolios/:id/holdings", async (req, res) => {
+    try {
+      const portfolioId = parseInt(req.params.id);
+      const portfolio = await storage.getPortfolio(portfolioId);
+      if (!portfolio) {
+        return res.status(404).json({ error: "Portfolio not found" });
+      }
+
+      const validation = addHoldingSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ error: validation.error.issues });
+      }
+      const buy = validation.data;
+
+      // Currency guard: a non-multi-currency portfolio rejects a different currency.
+      if (!portfolio.multiCurrency && buy.currency) {
+        if (buy.currency.toUpperCase() !== portfolio.baseCurrency.toUpperCase()) {
+          return res.status(400).json({
+            error: `Portafoglio non multivaluta: accetta solo ${portfolio.baseCurrency}, ricevuto ${buy.currency}`,
+          });
+        }
+      }
+
+      // Commission: 0 when fees are already included; otherwise the client value
+      // (edited in the popup) or, if absent, computed from the portfolio config.
+      const market = classifyMarket(buy.currency, buy.exchange, buy.symbol);
+      const commission = buy.feesIncluded
+        ? 0
+        : buy.commission ?? commissionFor(market, portfolio, buy.quantity, buy.price);
+
+      const existing = await storage.getHoldingBySymbol(portfolioId, buy.symbol);
+      const result = applyBuy(existing, { quantity: buy.quantity, price: buy.price, commission });
+
+      const holding = existing
+        ? await storage.updateHolding(existing.id, {
+            quantity: result.quantity,
+            avgPrice: result.avgPrice,
+            totalCost: result.totalCost,
+          })
+        : await storage.createHolding({
+            portfolioId,
+            symbol: buy.symbol,
+            name: buy.name,
+            exchange: buy.exchange,
+            currency: buy.currency ?? null,
+            quantity: result.quantity,
+            avgPrice: result.avgPrice,
+            totalCost: result.totalCost,
+          });
+
+      res.json(holding);
+    } catch {
+      res.status(500).json({ error: "Failed to add holding" });
+    }
+  });
+
+  app.delete("/api/portfolios/holdings/:id", async (req, res) => {
+    try {
+      await storage.removeHolding(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch {
+      res.status(500).json({ error: "Failed to remove holding" });
     }
   });
 

@@ -1,15 +1,17 @@
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { X, Plus, Star } from "lucide-react";
+import { X, Plus, Star, Briefcase } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { StockSearchResult } from "@shared/schema";
+import { StockSearchResult, type Portfolio } from "@shared/schema";
 import { useWatchlistMembership } from "@/hooks/use-watchlist-membership";
 import { cn } from "@/lib/utils";
+import PortfolioBuyForm from "./portfolio-buy-form";
 
 interface WatchlistModalProps {
   isOpen: boolean;
@@ -20,10 +22,16 @@ interface WatchlistModalProps {
 export default function WatchlistModal({ isOpen, onClose, stock }: WatchlistModalProps) {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newWatchlistName, setNewWatchlistName] = useState("");
+  const [buyPortfolio, setBuyPortfolio] = useState<Portfolio | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const { entries } = useWatchlistMembership(stock.symbol, isOpen);
+
+  const { data: portfolios = [] } = useQuery<Portfolio[]>({
+    queryKey: ["/api/portfolios"],
+    enabled: isOpen,
+  });
 
   const invalidateItems = (watchlistId: number) => {
     queryClient.invalidateQueries({ queryKey: [`/api/watchlists/${watchlistId}/items`] });
@@ -118,7 +126,9 @@ export default function WatchlistModal({ isOpen, onClose, stock }: WatchlistModa
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Add to Watchlist</DialogTitle>
+          <DialogTitle>
+            Aggiungi <span className="text-primary">{stock.symbol}</span>
+          </DialogTitle>
           <Button
             variant="ghost"
             size="sm"
@@ -131,9 +141,22 @@ export default function WatchlistModal({ isOpen, onClose, stock }: WatchlistModa
         
         <div className="space-y-4">
           <div className="text-sm text-muted-foreground">
-            Adding <span className="font-medium text-foreground">{stock.name}</span> ({stock.symbol})
+            {stock.name} ({stock.symbol})
           </div>
 
+          <Tabs defaultValue="watchlist" onValueChange={() => setBuyPortfolio(null)}>
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="watchlist">
+                <Star className="w-4 h-4 mr-2" />
+                Watchlist
+              </TabsTrigger>
+              <TabsTrigger value="portfolio">
+                <Briefcase className="w-4 h-4 mr-2" />
+                Portafoglio
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="watchlist" className="space-y-4 pt-2">
           {!showCreateForm && (
             <>
               <div className="space-y-3">
@@ -210,6 +233,44 @@ export default function WatchlistModal({ isOpen, onClose, stock }: WatchlistModa
               </div>
             </form>
           )}
+            </TabsContent>
+
+            <TabsContent value="portfolio" className="space-y-3 pt-2">
+              {buyPortfolio ? (
+                <PortfolioBuyForm
+                  portfolio={buyPortfolio}
+                  stock={stock}
+                  onDone={onClose}
+                  onBack={() => setBuyPortfolio(null)}
+                />
+              ) : portfolios.length > 0 ? (
+                <div className="space-y-3">
+                  {portfolios.map((portfolio) => (
+                    <Button
+                      key={portfolio.id}
+                      variant="outline"
+                      className="w-full justify-between text-left bg-background border-border hover:border-primary"
+                      onClick={() => setBuyPortfolio(portfolio)}
+                    >
+                      <div>
+                        <div className="font-medium">{portfolio.name}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {portfolio.baseCurrency}
+                          {portfolio.multiCurrency ? " · multivaluta" : ""}
+                        </div>
+                      </div>
+                      <Briefcase className="w-4 h-4 shrink-0 text-muted-foreground" />
+                    </Button>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-6 text-sm text-muted-foreground">
+                  <p>Nessun portafoglio.</p>
+                  <p className="mt-1">Creane uno dalla pagina Portafogli.</p>
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
         </div>
       </DialogContent>
     </Dialog>

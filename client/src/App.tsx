@@ -7,6 +7,7 @@ import Navigation from "@/components/navigation";
 import SearchPage from "@/pages/search";
 import StockDetailPage from "@/pages/stock-detail";
 import WatchlistPage from "@/pages/watchlist";
+import PortfoliosPage from "@/pages/portfolios";
 import AlertsPage from "@/pages/alerts";
 import SettingsPage from "@/pages/settings";
 import NotFound from "@/pages/not-found";
@@ -19,6 +20,7 @@ function Router() {
         <Route path="/" component={SearchPage} />
         <Route path="/stock/:symbol" component={StockDetailPage} />
         <Route path="/watchlist" component={WatchlistPage} />
+        <Route path="/portfolios" component={PortfoliosPage} />
         <Route path="/alerts" component={AlertsPage} />
         <Route path="/settings" component={SettingsPage} />
         <Route component={NotFound} />

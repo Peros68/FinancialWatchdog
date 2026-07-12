@@ -434,6 +434,20 @@ Dettaglio in `Docs/CHANGELOG_DECISIONS.md`.
 - **Nota API**: `POST /api/alerts` vuole `targetPrice` numerico, non stringa (altrimenti 400).
 - Dettaglio completo in `Docs/HANDOVER.md` §9.
 
+## Portafogli virtuali multipli (2026-07-12, IMPLEMENTATO — db:push in attesa di OK utente)
+- Feature nuova: portafogli con posizioni (quantità, prezzo medio spese incluse, costo totale),
+  tab Watchlist/Portafoglio nella `WatchlistModal`, popup acquisto, pagina `/portfolios`.
+- **Decisioni utente**: multivaluta DICHIARATA alla creazione (se false → blocca valuta ≠ base);
+  NIENTE tabella transazioni (solo posizione aggregata); commissioni % + fisso per EU/USA default 0
+  (nessun valore broker hardcoded); toggle "spese già incluse" per import storico (commissione = 0,
+  prezzo = costo medio all-in). Media pesata: `(oldTotalCost + qty*price + commission)/(oldQty+qty)`.
+- **Delta DB additivo, 2 tabelle** (`portfolios`, `portfolio_holdings`): nessuna modifica alle
+  esistenti. **`db:push` NON eseguito** — mostrato il SQL all'utente, in attesa di approvazione.
+- File: `shared/schema.ts`, `shared/portfolio.ts` (util pure), `server/storage.ts`, `server/routes.ts`,
+  `client/src/components/portfolio-buy-form.tsx`, `watchlist-modal.tsx`, `pages/portfolios.tsx`,
+  `navigation.tsx`, `App.tsx`, `tests/portfolio-math.test.ts`, `tests/portfolio-api.test.ts`.
+- Verde: check 0 · lint 0 · Vitest 103/103 · build OK. Dettaglio in `memory/portfolios-feature.md`.
+
 ## Authorization Judge v2 ATTIVO (2026-07-10, F.2/F.3 fatte — CANARY F.4 in corso)
 - v2 = classificazione deterministica context-aware: quote-masking (P1), per-segmento con
   max-severity (P2), cwd effettivo via cd (P3), credenziali per azione+target (P4), rete per

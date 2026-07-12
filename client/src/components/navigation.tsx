@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Search, Star, Bell, Menu, Settings } from "lucide-react";
+import { Search, Star, Bell, Menu, Settings, Briefcase } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -9,6 +9,7 @@ export default function Navigation() {
   const navItems = [
     { icon: Search, label: "Search", href: "/", active: location === "/" },
     { icon: Star, label: "Watchlists", href: "/watchlist", active: location === "/watchlist" },
+    { icon: Briefcase, label: "Portfolios", href: "/portfolios", active: location === "/portfolios" },
     { icon: Bell, label: "Alerts", href: "/alerts", active: location === "/alerts" },
     { icon: Settings, label: "Settings", href: "/settings", active: location === "/settings" },
   ];
