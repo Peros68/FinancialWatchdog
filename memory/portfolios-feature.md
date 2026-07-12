@@ -1,13 +1,13 @@
 ---
 name: portfolios-feature
-description: Portafogli virtuali multipli — codice implementato e testato in locale, db:push su Supabase in attesa di approvazione utente.
+description: Portafogli virtuali multipli — implementato, deployato su Render e verificato live su Supabase (round-trip reale OK).
 metadata:
   type: project
 ---
 
-Feature "Portafogli virtuali multipli" implementata (sessione 2026-07-12).
+Feature "Portafogli virtuali multipli" implementata e IN PRODUZIONE (sessione 2026-07-12).
 
-**Stato:** codice + test locali OK (tsc, 103 vitest verdi incl. `portfolio-math`/`portfolio-api`, build, lint). **`db:push` su Supabase/Render NON eseguito** — l'utente deve approvare il delta DB prima dell'applicazione.
+**Stato:** COMPLETATA e LIVE. Codice + test locali OK (tsc, 103 vitest verdi incl. `portfolio-math`/`portfolio-api`, build, lint). **`db:push` su Supabase eseguito dall'utente** ("Changes applied"). **Commit `deb9955` pushato su `main` → Render redeploy automatico** (live in ~63s). **Round-trip live verificato** su `https://financialwatchdog.onrender.com`: create portafoglio, 2 acquisti (spese calcolate + spese incluse), read-back da Supabase (valori `numeric`→`number`, precisione esatta 10.119/11.0595/221.19), guardia valuta USD→400, delete+cascade. Dati di test ripuliti, nessun segreto stampato.
 
 **Delta DB (additivo, 2 nuove tabelle):** `portfolios` (name, userId **NOT NULL**, baseCurrency, multiCurrency, feeEuPct/Fixed, feeUsaPct/Fixed) e `portfolio_holdings` (portfolioId **NOT NULL** FK cascade, symbol, name, exchange, currency, quantity, avgPrice, totalCost; unique `(portfolio_id, symbol)`). Nessuna modifica alle tabelle esistenti.
 

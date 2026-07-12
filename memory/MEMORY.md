@@ -434,7 +434,14 @@ Dettaglio in `Docs/CHANGELOG_DECISIONS.md`.
 - **Nota API**: `POST /api/alerts` vuole `targetPrice` numerico, non stringa (altrimenti 400).
 - Dettaglio completo in `Docs/HANDOVER.md` §9.
 
-## Portafogli virtuali multipli (2026-07-12, IMPLEMENTATO — db:push in attesa di OK utente)
+## Portafogli virtuali multipli (2026-07-12, COMPLETATO E LIVE su Render/Supabase)
+- **`db:push` eseguito** (utente, "Changes applied") + **commit `deb9955` su `main` → Render redeploy**.
+  **Round-trip live verificato** su Supabase: numeric→number esatti (10.119/11.0595/221.19), toggle
+  spese-incluse, guardia valuta USD→400, delete+cascade; dati test ripuliti. Dettaglio: `memory/portfolios-feature.md`.
+- Colonne denaro/quantità = **`numeric(p,s)`** via `customType decimalNumber` (DB numeric, TS number);
+  FK `user_id`/`portfolio_id` **NOT NULL**.
+
+## Portafogli virtuali multipli — storico decisioni (2026-07-12, IMPLEMENTATO)
 - Feature nuova: portafogli con posizioni (quantità, prezzo medio spese incluse, costo totale),
   tab Watchlist/Portafoglio nella `WatchlistModal`, popup acquisto, pagina `/portfolios`.
 - **Decisioni utente**: multivaluta DICHIARATA alla creazione (se false → blocca valuta ≠ base);
