@@ -128,7 +128,7 @@ export default function TradingPage() {
             autoSaveId={`trading-split-${active.kind}`}
             className="h-full"
           >
-            <ResizablePanel id="list" order={1} defaultSize={active.kind === "portfolio" ? 40 : 26} minSize={16}>
+            <ResizablePanel id="list" order={1} defaultSize={active.kind === "portfolio" ? 30 : 18} minSize={12}>
               {active.kind === "portfolio" ? (
                 <PortfolioList
                   key={active.key}
@@ -146,7 +146,7 @@ export default function TradingPage() {
               )}
             </ResizablePanel>
             <DividerHandle onCollapse={() => setListCollapsed(true)} />
-            <ResizablePanel id="chart" order={2} defaultSize={active.kind === "portfolio" ? 60 : 74} minSize={30}>
+            <ResizablePanel id="chart" order={2} defaultSize={active.kind === "portfolio" ? 70 : 82} minSize={30}>
               <ChartPanel symbol={selectedSymbol} />
             </ResizablePanel>
           </ResizablePanelGroup>
@@ -224,17 +224,17 @@ function PortfolioList({
 
   return (
     <div className="h-full overflow-auto">
-      <table className="w-full text-sm">
-        <thead className="sticky top-0 bg-card z-10 text-xs text-muted-foreground">
+      <table className="w-full text-xs">
+        <thead className="sticky top-0 bg-card z-10 text-[11px] text-muted-foreground">
           <tr className="border-b border-border">
-            <th className="text-left font-medium px-3 py-2">Descrizione</th>
-            <th className="text-right font-medium px-2 py-2">Prezzo</th>
-            <th className="text-right font-medium px-2 py-2">P&amp;L oggi</th>
-            <th className="text-right font-medium px-2 py-2">P&amp;L %</th>
-            <th className="text-right font-medium px-2 py-2">Prezzo medio</th>
-            <th className="text-right font-medium px-2 py-2">Quantità</th>
-            <th className="text-right font-medium px-2 py-2">Valore di carico</th>
-            <th className="px-2 py-2" />
+            <th className="text-left font-medium px-2 py-1.5">Titolo</th>
+            <th className="text-right font-medium px-1.5 py-1.5 whitespace-nowrap">Prezzo</th>
+            <th className="text-right font-medium px-1.5 py-1.5 whitespace-nowrap">P&amp;L</th>
+            <th className="text-right font-medium px-1.5 py-1.5 whitespace-nowrap">P&amp;L%</th>
+            <th className="text-right font-medium px-1.5 py-1.5 whitespace-nowrap">P.medio</th>
+            <th className="text-right font-medium px-1.5 py-1.5 whitespace-nowrap">Qtà</th>
+            <th className="text-right font-medium px-1.5 py-1.5 whitespace-nowrap">Carico</th>
+            <th className="px-1 py-1.5" />
           </tr>
         </thead>
         <tbody>
@@ -243,17 +243,17 @@ function PortfolioList({
             const pnlToday = q ? q.change * h.quantity : undefined;
             return (
               <RowShell key={h.id} selected={h.symbol === selectedSymbol} onSelect={() => onSelect(h.symbol)}>
-                <td className="px-3 py-1">
-                  <div className="font-medium truncate max-w-[220px]">{h.name}</div>
-                  <div className="text-xs text-muted-foreground">{h.symbol} · {h.exchange}</div>
+                <td className="px-2 py-1">
+                  <div className="font-medium truncate max-w-[130px]">{h.name}</div>
+                  <div className="text-[10px] text-muted-foreground truncate max-w-[130px]">{h.symbol} · {h.exchange}</div>
                 </td>
-                <td className="text-right px-2 py-1">{num2(q?.currentPrice)}</td>
-                <td className={cn("text-right px-2 py-1", signClass(pnlToday))}>{num2(pnlToday)}</td>
-                <td className={cn("text-right px-2 py-1", signClass(q?.changePercent))}>{fmtPct(q?.changePercent)}</td>
-                <td className="text-right px-2 py-1">{num2(h.avgPrice)}</td>
-                <td className="text-right px-2 py-1">{num2(h.quantity)}</td>
-                <td className="text-right px-2 py-1">{num2(h.totalCost)}</td>
-                <td className="text-center px-2 py-1">
+                <td className="text-right px-1.5 py-1 whitespace-nowrap">{num2(q?.currentPrice)}</td>
+                <td className={cn("text-right px-1.5 py-1 whitespace-nowrap", signClass(pnlToday))}>{num2(pnlToday)}</td>
+                <td className={cn("text-right px-1.5 py-1 whitespace-nowrap", signClass(q?.changePercent))}>{fmtPct(q?.changePercent)}</td>
+                <td className="text-right px-1.5 py-1 whitespace-nowrap">{num2(h.avgPrice)}</td>
+                <td className="text-right px-1.5 py-1 whitespace-nowrap">{num2(h.quantity)}</td>
+                <td className="text-right px-1.5 py-1 whitespace-nowrap">{num2(h.totalCost)}</td>
+                <td className="text-center px-1 py-1">
                   <BellButton
                     onClick={(e) => {
                       e.stopPropagation();
@@ -309,13 +309,13 @@ function WatchlistList({
 
   return (
     <div className="h-full overflow-auto">
-      <table className="w-full text-sm">
-        <thead className="sticky top-0 bg-card z-10 text-xs text-muted-foreground">
+      <table className="w-full text-xs">
+        <thead className="sticky top-0 bg-card z-10 text-[11px] text-muted-foreground">
           <tr className="border-b border-border">
-            <th className="text-left font-medium px-3 py-2">Descrizione</th>
-            <th className="text-right font-medium px-2 py-2">Prezzo</th>
-            <th className="text-right font-medium px-2 py-2">P&amp;L %</th>
-            <th className="px-2 py-2" />
+            <th className="text-left font-medium px-2 py-1.5">Titolo</th>
+            <th className="text-right font-medium px-1.5 py-1.5 whitespace-nowrap">Prezzo</th>
+            <th className="text-right font-medium px-1.5 py-1.5 whitespace-nowrap">P&amp;L%</th>
+            <th className="px-1 py-1.5" />
           </tr>
         </thead>
         <tbody>
@@ -323,13 +323,13 @@ function WatchlistList({
             const q = quotes.get(it.symbol);
             return (
               <RowShell key={it.id} selected={it.symbol === selectedSymbol} onSelect={() => onSelect(it.symbol)}>
-                <td className="px-3 py-1">
-                  <div className="font-medium truncate max-w-[200px]">{it.name}</div>
-                  <div className="text-xs text-muted-foreground">{it.symbol} · {it.exchange}</div>
+                <td className="px-2 py-1">
+                  <div className="font-medium truncate max-w-[130px]">{it.name}</div>
+                  <div className="text-[10px] text-muted-foreground truncate max-w-[130px]">{it.symbol} · {it.exchange}</div>
                 </td>
-                <td className="text-right px-2 py-1">{num2(q?.currentPrice)}</td>
-                <td className={cn("text-right px-2 py-1", signClass(q?.changePercent))}>{fmtPct(q?.changePercent)}</td>
-                <td className="text-center px-2 py-1">
+                <td className="text-right px-1.5 py-1 whitespace-nowrap">{num2(q?.currentPrice)}</td>
+                <td className={cn("text-right px-1.5 py-1 whitespace-nowrap", signClass(q?.changePercent))}>{fmtPct(q?.changePercent)}</td>
+                <td className="text-center px-1 py-1">
                   <BellButton
                     onClick={(e) => {
                       e.stopPropagation();
@@ -383,18 +383,18 @@ function DividerHandle({ onCollapse }: { onCollapse: () => void }) {
   );
 }
 
+// Always-visible tab on the left border of the chart when the list is hidden:
+// a full-height rail so it can't be missed, click to restore the list.
 function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   return (
-    <div className="relative w-1.5 shrink-0 bg-border">
-      <button
-        onClick={onExpand}
-        title="Mostra la lista"
-        aria-label="Mostra la lista"
-        className="absolute top-1/2 left-0 z-20 flex h-9 w-4 -translate-y-1/2 items-center justify-center rounded-sm border border-border bg-card text-muted-foreground shadow hover:text-foreground"
-      >
-        <ChevronRight className="w-3 h-3" />
-      </button>
-    </div>
+    <button
+      onClick={onExpand}
+      title="Mostra la lista titoli"
+      aria-label="Mostra la lista titoli"
+      className="group flex h-full w-6 shrink-0 items-center justify-center border-r border-border bg-muted/40 transition-colors hover:bg-muted"
+    >
+      <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground" />
+    </button>
   );
 }
 
