@@ -5,14 +5,20 @@
 
 **Ultimo aggiornamento:** 2026-07-12
 **Stato qualità (ultima verifica, 2026-07-12):** `npm run check` 0 · `npm run lint` 0 ·
-`npm test` **116/116** · `npm run build` OK.
+`npm test` **120/120** · `npm run build` OK.
+
+**RELEASE `v1.3-trading` (2026-07-12):** vista Trading desktop completa e consolidata, **pushata su
+`main` + tag annotato `v1.3-trading`**. Include: tab trascinabili persistenti, lista+grafico
+ridimensionabile con freccia sul divisore, altezza grafico dinamica, **zoom orizzontale (rotella) +
+scala prezzi (drag asse destro)**, **sotto-aree Volume/RSI** (volume verde/rosso, RSI leggibile, label
+laterale, scala per sotto-area, hover riordina/chiudi, assi allineati), **sync campanella lista ↔ alert
+dal grafico**, bugfix selezione/persistenza. Dettaglio in `WORK_LOG.md` (2026-07-12, voce release).
 
 **PORTAFOGLI VIRTUALI + VISTA TRADING (2026-07-12):** aggiunti portafogli virtuali multipli
 (tabelle `portfolios`/`portfolio_holdings`, `numeric` per denaro via customType, media pesata
 spese incluse, commissioni EU/USA, multivaluta) — **LIVE su Supabase/Render** (commit `deb9955`);
-pulsante **Modifica** portafoglio + guardia valute — **LIVE** (commit `d2018e1`); **Vista Trading
-desktop** `/trading` (tab trascinabili persistenti, lista+grafico ridimensionabile, fullscreen) —
-**committata in locale, NON pushata**. Dettaglio in `WORK_LOG.md` (2026-07-12) e `memory/MEMORY.md`.
+pulsante **Modifica** portafoglio + guardia valute — **LIVE** (commit `d2018e1`). Dettaglio in
+`WORK_LOG.md` (2026-07-12) e `memory/MEMORY.md`.
 **GATE CHIUSO (2026-07-06):** `npm run db:push` eseguito su conferma utente (Docker Desktop e
 container `finwatch-postgres` avviati prima del push; DATABASE_URL passato inline). Output
 drizzle-kit: "Changes applied" → tabella `drawings` creata secondo l'output drizzle (nessuna
@@ -94,15 +100,16 @@ npm run build      # build client + bundle server
      invariato): senza pannelli il main riempie l'altezza; con Volume/RSI si distribuisce.
   4. ✅ **Pannelli Volume e RSI attivabili** (toggle toolbar); RSI(14) Wilder in
      `client/src/lib/indicators.ts` (puro, testato `tests/indicators.test.ts`).
-  5. ⏳ **Interazioni desktop**: rotella = intervallo orizzontale visibile (richiede windowing dati →
-     impatta la mappatura tempo↔indice dei disegni); drag verticale sull'**asse prezzi destro** =
-     scala verticale (override domain Y, più sicuro). **Rinviato**: da coordinare con gli handler
-     pointer del disegno.
-  6. ⏳ **Interazioni touch**: pinch = zoom; drag verticale un dito sull'asse prezzi = scala. **Non
-     modificare** il resto del layout mobile. **Rinviato** (stesso rischio disegni).
-  **Rationale del rinvio 5-6:** le interazioni si intrecciano col sistema scala/indici e con gli
-  handler `onPointerDown/Move` del disegno (parte fragile e stratificata); da progettare con cura per
-  evitare regressioni sugli strumenti di disegno.
+  5. ✅ **Interazioni desktop (FATTO 2026-07-12)**: rotella = zoom orizzontale (finestra sulle candele,
+     re-index disegni dai tempi canonici, nessuna regressione); drag verticale sull'**asse prezzi
+     destro** = scala verticale (`yScaleFactor`, dominio attorno al midpoint); gutter disattivato in
+     modalità disegno. Inoltre **scala verticale per sotto-area** Volume/RSI (gutter dedicato).
+  6. ⏳ **Interazioni touch** (pinch = zoom; drag verticale un dito sull'asse prezzi = scala): **NON
+     ancora fatto** — resta da implementare senza toccare il resto del layout mobile.
+  **Extra fatti (2026-07-12):** sync campanella lista ↔ alert dal grafico; fix cursori/stabilità
+  divisore; bugfix "grafico vuoto al rientro"; fix render Volume/RSI (flex-col) + RSI su serie completa;
+  sotto-aree Volume/RSI (volume verde/rosso, label laterale, hover riordina/chiudi, assi allineati).
+  Tutto **in `v1.3-trading`**.
 - ~~**PostgreSQL (D1/D4)**~~ — **FATTO 2026-07-05** (attivato e verificato, vedi §6).
 - **Monitoraggio alert fase 2** — scheduler + `triggeredAt` **FATTI (2026-07-06)**; resta la
   logica di notifica (fuori scope). **Modello C DECISO e IMPLEMENTATO (2026-07-06)**: tutti i

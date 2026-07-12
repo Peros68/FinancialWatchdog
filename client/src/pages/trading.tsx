@@ -4,10 +4,10 @@ import { Link } from "wouter";
 import { Star, Briefcase, Bell, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ResizablePanelGroup, ResizablePanel } from "@/components/ui/resizable";
-import { PanelResizeHandle } from "react-resizable-panels";
+import { PanelResizeHandle, type ImperativePanelHandle } from "react-resizable-panels";
 import StockChart from "@/components/stock-chart";
 import AlertModal from "@/components/alert-modal";
-import type { Watchlist, WatchlistItem, Portfolio, PortfolioHolding, StockQuote } from "@shared/schema";
+import type { Watchlist, WatchlistItem, Portfolio, PortfolioHolding, StockQuote, Alert } from "@shared/schema";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { orderTabs, moveKey, tabKey, resolveSelectedSymbol, type TradingTab } from "@/lib/trading";
@@ -32,11 +32,25 @@ export default function TradingPage() {
   const { data: watchlists = [] } = useQuery<Watchlist[]>({ queryKey: ["/api/watchlists"] });
   const { data: portfolios = [] } = useQuery<Portfolio[]>({ queryKey: ["/api/portfolios"] });
 
+  // Alerts drive the bell state in the list. The chart invalidates ["/api/alerts"]
+  // whenever an alert is created/removed, so the list bell updates immediately.
+  const { data: alerts = [] } = useQuery<Alert[]>({ queryKey: ["/api/alerts"] });
+  const alertSymbols = useMemo(
+    () =>
+      new Set(
+        alerts
+          .filter((a) => a.isActive !== false && !a.triggeredAt)
+          .map((a) => a.symbol.toUpperCase()),
+      ),
+    [alerts],
+  );
+
   const [order, setOrder] = useLocalStorage<string[]>("trading:tabOrder", []);
   const [activeKey, setActiveKey] = useLocalStorage<string | null>("trading:activeTab", null);
   const [listCollapsed, setListCollapsed] = useLocalStorage<boolean>("trading:listCollapsed", false);
   const [selectedSymbol, setSelectedSymbol] = useLocalStorage<string | null>("trading:selectedSymbol", null);
   const dragKey = useRef<string | null>(null);
+  const listPanelRef = useRef<ImperativePanelHandle>(null);
 
   const allTabs: TradingTab[] = useMemo(
     () => [
@@ -87,6 +101,25 @@ export default function TradingPage() {
     if (from) setOrder(moveKey(orderedTabs.map((t) => t.key), from, targetKey));
   };
 
+  const toggleList = () => {
+    const p = listPanelRef.current;
+    if (!p) return;
+    if (p.isCollapsed()) p.expand();
+    else p.collapse();
+  };
+
+  // Keep the single (never-remounted) panel group in sync with the persisted
+  // collapsed state — applied when the panel first mounts and whenever the active
+  // tab changes — but only on an actual mismatch, so switching Watchlist/Portafoglio
+  // never jolts the split width or breaks the resize handle.
+  useEffect(() => {
+    const p = listPanelRef.current;
+    if (!p) return;
+    const isCol = p.isCollapsed();
+    if (listCollapsed && !isCol) p.collapse();
+    else if (!listCollapsed && isCol) p.expand();
+  }, [active?.key, listCollapsed]);
+
   // Desktop-only view: on mobile point to the existing pages (left untouched).
   if (isMobile) {
     return (
@@ -134,33 +167,34 @@ export default function TradingPage() {
         )}
       </div>
 
-      {/* Resizable list + chart */}
+      {/* Resizable list + chart. One PanelGroup, never remounted on tab change:
+          the list panel collapses/expands in place so the resize handle and its
+          cursor stay consistent after hide/restore and after switching tab. */}
       <div className="flex-1 min-h-0">
         {!active ? (
           <div className="h-full flex items-center justify-center text-muted-foreground">
             Seleziona o crea una collezione.
           </div>
-        ) : listCollapsed ? (
-          <div className="h-full flex">
-            <CollapsedRail onExpand={() => setListCollapsed(false)} />
-            <div className="flex-1 min-w-0">
-              <ChartPanel symbol={selectedSymbol} />
-            </div>
-          </div>
         ) : (
-          <ResizablePanelGroup
-            key={active.kind}
-            direction="horizontal"
-            autoSaveId={`trading-split-${active.kind}`}
-            className="h-full"
-          >
-            <ResizablePanel id="list" order={1} defaultSize={active.kind === "portfolio" ? 30 : 18} minSize={12}>
+          <ResizablePanelGroup direction="horizontal" autoSaveId="trading-split" className="h-full">
+            <ResizablePanel
+              id="list"
+              order={1}
+              ref={listPanelRef}
+              collapsible
+              collapsedSize={0}
+              minSize={12}
+              defaultSize={26}
+              onCollapse={() => setListCollapsed(true)}
+              onExpand={() => setListCollapsed(false)}
+            >
               {active.kind === "portfolio" ? (
                 <PortfolioList
                   key={active.key}
                   portfolio={portfolios.find((p) => p.id === active.id)!}
                   selectedSymbol={selectedSymbol}
                   onSelect={setSelectedSymbol}
+                  alertSymbols={alertSymbols}
                 />
               ) : (
                 <WatchlistList
@@ -168,11 +202,12 @@ export default function TradingPage() {
                   watchlistId={active.id}
                   selectedSymbol={selectedSymbol}
                   onSelect={setSelectedSymbol}
+                  alertSymbols={alertSymbols}
                 />
               )}
             </ResizablePanel>
-            <DividerHandle onCollapse={() => setListCollapsed(true)} />
-            <ResizablePanel id="chart" order={2} defaultSize={active.kind === "portfolio" ? 70 : 82} minSize={30}>
+            <DividerHandle collapsed={listCollapsed} onToggle={toggleList} />
+            <ResizablePanel id="chart" order={2} minSize={30}>
               <ChartPanel symbol={selectedSymbol} />
             </ResizablePanel>
           </ResizablePanelGroup>
@@ -213,16 +248,17 @@ function RowShell({
   );
 }
 
-function BellButton({ onClick }: { onClick: (e: React.MouseEvent) => void }) {
+function BellButton({ active, onClick }: { active: boolean; onClick: (e: React.MouseEvent) => void }) {
   return (
     <Button
       variant="ghost"
       size="sm"
       className="h-6 w-6 p-0 text-muted-foreground hover:text-primary"
       onClick={onClick}
-      aria-label="Crea alert"
+      aria-label={active ? "Alert attivo su questo titolo" : "Crea alert"}
+      title={active ? "Alert attivo" : "Crea alert"}
     >
-      <Bell className="w-3.5 h-3.5" />
+      <Bell className={cn("w-3.5 h-3.5", active && "fill-yellow-400 text-yellow-400")} />
     </Button>
   );
 }
@@ -231,10 +267,12 @@ function PortfolioList({
   portfolio,
   selectedSymbol,
   onSelect,
+  alertSymbols,
 }: {
   portfolio: Portfolio;
   selectedSymbol: string | null;
   onSelect: (s: string) => void;
+  alertSymbols: Set<string>;
 }) {
   const { data: holdings = [] } = useQuery<PortfolioHolding[]>({
     queryKey: [`/api/portfolios/${portfolio.id}/holdings`],
@@ -275,6 +313,7 @@ function PortfolioList({
                 <td className="text-right px-1.5 py-1 whitespace-nowrap">{num2(h.totalCost)}</td>
                 <td className="text-center px-1 py-1">
                   <BellButton
+                    active={alertSymbols.has(h.symbol.toUpperCase())}
                     onClick={(e) => {
                       e.stopPropagation();
                       setAlertFor({ symbol: h.symbol, price: q?.currentPrice });
@@ -310,10 +349,12 @@ function WatchlistList({
   watchlistId,
   selectedSymbol,
   onSelect,
+  alertSymbols,
 }: {
   watchlistId: number;
   selectedSymbol: string | null;
   onSelect: (s: string) => void;
+  alertSymbols: Set<string>;
 }) {
   const { data: items = [] } = useQuery<WatchlistItem[]>({
     queryKey: [`/api/watchlists/${watchlistId}/items`],
@@ -345,6 +386,7 @@ function WatchlistList({
                 <td className={cn("text-right px-1.5 py-1 whitespace-nowrap", signClass(q?.changePercent))}>{fmtPct(q?.changePercent)}</td>
                 <td className="text-center px-1 py-1">
                   <BellButton
+                    active={alertSymbols.has(it.symbol.toUpperCase())}
                     onClick={(e) => {
                       e.stopPropagation();
                       setAlertFor({ symbol: it.symbol, price: q?.currentPrice });
@@ -378,37 +420,25 @@ function WatchlistList({
 
 // Lateral arrow control on the list/chart divider. Stays visible on the border
 // even when the list is hidden, so the user can always bring the list back.
-function DividerHandle({ onCollapse }: { onCollapse: () => void }) {
+// Resize handle between list and chart. The bar itself carries the resize cursor
+// (col-resize); the arrow tab keeps the normal pointer and toggles the list. The
+// tab stays on the divider even when the list is collapsed (handle at far left).
+function DividerHandle({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   return (
-    <PanelResizeHandle className="relative w-1.5 bg-border transition-colors hover:bg-primary/40 data-[resize-handle-state=drag]:bg-primary">
+    <PanelResizeHandle className="relative w-1.5 shrink-0 cursor-col-resize bg-border transition-colors hover:bg-primary/40 data-[resize-handle-state=drag]:bg-primary">
       <button
         onPointerDown={(e) => e.stopPropagation()} // don't start a resize drag
         onClick={(e) => {
           e.stopPropagation();
-          onCollapse();
+          onToggle();
         }}
-        title="Nascondi la lista (grafico a tutta larghezza)"
-        aria-label="Nascondi la lista"
-        className="absolute top-1/2 -left-2 z-20 flex h-9 w-4 -translate-y-1/2 items-center justify-center rounded-sm border border-border bg-card text-muted-foreground shadow hover:text-foreground"
+        title={collapsed ? "Mostra la lista titoli" : "Nascondi la lista titoli"}
+        aria-label={collapsed ? "Mostra la lista titoli" : "Nascondi la lista titoli"}
+        className="absolute top-1/2 left-1/2 z-20 flex h-10 w-4 -translate-x-1/2 -translate-y-1/2 cursor-pointer items-center justify-center rounded-sm border border-border bg-card text-muted-foreground shadow hover:text-foreground"
       >
-        <ChevronLeft className="w-3 h-3" />
+        {collapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronLeft className="w-3 h-3" />}
       </button>
     </PanelResizeHandle>
-  );
-}
-
-// Always-visible tab on the left border of the chart when the list is hidden:
-// a full-height rail so it can't be missed, click to restore the list.
-function CollapsedRail({ onExpand }: { onExpand: () => void }) {
-  return (
-    <button
-      onClick={onExpand}
-      title="Mostra la lista titoli"
-      aria-label="Mostra la lista titoli"
-      className="group flex h-full w-6 shrink-0 items-center justify-center border-r border-border bg-muted/40 transition-colors hover:bg-muted"
-    >
-      <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground" />
-    </button>
   );
 }
 

@@ -470,22 +470,32 @@ Dettaglio in `Docs/CHANGELOG_DECISIONS.md`.
   precedente finché la nuova collezione carica) — tradeoff voluto "no flicker a null". Persistenza reale
   e ramo `listCollapsed` restano da verificare manualmente (nessun render-test React nel progetto).
 
-## Vista Trading — evoluzione grafico (spec utente 2026-07-12): punti 1-4 FATTI, 5-6 RIMANENTI
-Implementati in sessione autonoma 2026-07-12 (commit locali `1a30412`, incremento 2 successivo; NON pushati):
-1. ✅ **Freccia sul divisore** (sostituisce il fullscreen): `←` nasconde la lista (grafico a tutta larghezza),
-   `→` ripristina; comando visibile sul bordo anche a lista nascosta. Stato `trading:listCollapsed`.
-2. ✅ **Lista compatta** + grafico più largo di default (list defaultSize 40/26%).
-3. ✅ **Altezza grafico dinamica** via prop `StockChart.fillHeight` (default off = stock-detail invariato):
-   senza pannelli il main riempie l'altezza; con Volume/RSI l'altezza si distribuisce (pannelli fissi, main flex).
-4. ✅ **Pannelli Volume e RSI attivabili** (toggle in toolbar); RSI(14) Wilder in `client/src/lib/indicators.ts`.
+## Vista Trading — evoluzione grafico: FATTA e in RELEASE `v1.3-trading` (2026-07-12, PUSHATA)
+Consolidata e pushata su `main` + tag annotato `v1.3-trading`. Stato dei punti dello spec:
+1. ✅ **Freccia sul divisore** (nasconde/mostra la lista; visibile anche a lista nascosta).
+2. ✅ **Lista compatta** + grafico più largo.
+3. ✅ **Altezza grafico dinamica** via `StockChart.fillHeight` (default off = stock-detail invariato).
+4. ✅ **Pannelli Volume e RSI attivabili**; RSI(14) Wilder in `client/src/lib/indicators.ts`.
+5. ✅ **Interazioni desktop**: rotella = zoom orizzontale (finestra candele, re-index disegni dai tempi
+   canonici → nessuna regressione); drag verticale asse prezzi destro = scala Y; gutter off in modalità
+   disegno. + scala verticale per sotto-area Volume/RSI.
+6. ⏳ **Interazioni touch** (pinch/drag scala): **UNICO rimasto**, da fare senza toccare il layout mobile.
 
-**RIMANENTI (rinviati di proposito — rischio sul sistema disegni/scala, da progettare con cura):**
-5. **Interazioni desktop**: rotella = intervallo orizzontale (richiede windowing dati → tocca la mappatura
-   tempo↔indice dei disegni); drag verticale sull'asse prezzi destro = scala verticale (override domain Y,
-   più sicuro ma va coordinato con gli handler pointer del disegno).
-6. **Interazioni touch**: pinch = zoom; drag verticale un dito sull'asse prezzi = scala. Non toccare il resto
-   del layout mobile. NB: gli handler `onPointerDown/Move` del disegno in `stock-chart.tsx` vanno coordinati
-   per non entrare in conflitto.
+**Extra fatti (2026-07-12, in `v1.3-trading`):**
+- **Sync campanella lista ↔ alert dal grafico** (`trading.tsx` legge `["/api/alerts"]` → `alertSymbols`).
+- **Fix cursori/stabilità divisore**: `cursor-col-resize` barra / `cursor-pointer` freccia; un solo
+  `PanelGroup` mai rimontato, lista `collapsible` + ref imperativo, sync collapse solo su mismatch.
+- **Bugfix "grafico vuoto al rientro"**: `selectedSymbol` persistito + `resolveSelectedSymbol` (funzione
+  pura in `lib/trading.ts`) a livello pagina (gira anche a lista nascosta).
+- **Fix render Volume/RSI**: pannelli flex-col + wrapper `flex-1 min-h-0` + `ResponsiveContainer height="100%"`
+  (eliminato `calc(100% - 28px)` che collassava a 0px in flex). **RSI su serie completa** poi finestrato.
+- **Sotto-aree Volume/RSI** (verso `Docs/img/Esempio web.jpg`): volume verde/rosso (`<Cell>`), RSI leggibile
+  (1.75, midline 50, ticks 30/50/70), **label laterale** (no header), **scala per sotto-area** (gutter),
+  **hover riordina/chiudi** (`subPanelOrder`), **assi allineati** (`SUB_AXIS_WIDTH=60` su tutti gli YAxis;
+  overlay disegni si adatta leggendo `rc.offset`). Componente `SubPanel` in `stock-chart.tsx`.
+- **Dati Yahoo verificati**: volume disponibile diretto (no calcolo), RSI client-side dai close, punti
+  sufficienti per RSI(14) a tutti i timeframe tranne `1S` (~15 punti → 1 solo valore).
+- Qualità: check 0 · lint 0 · **Vitest 120/120** · build OK. Validato dal `test-engineer` a ogni step.
 
 ## Portafogli virtuali multipli — storico decisioni (2026-07-12, IMPLEMENTATO)
 - Feature nuova: portafogli con posizioni (quantità, prezzo medio spese incluse, costo totale),

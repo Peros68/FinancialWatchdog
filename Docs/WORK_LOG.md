@@ -2,6 +2,50 @@
 
 Registro cronologico degli incrementi. Voce più recente in alto.
 
+## 2026-07-12 — Consolidamento vista Trading (release `v1.3-trading`)
+
+Consolidamento e **push su `main`** di tutta l'evoluzione della vista Trading desktop, con **tag
+annotato `v1.3-trading`**. Riepilogo delle modifiche entrate dopo il commit `290b21f`:
+
+**Interazioni grafico (punti 5-6 dello spec, prima rinviati — ora FATTI):**
+- **Zoom orizzontale con rotella**: finestra sulle ultime N candele (`visibleCount`, min 10; su=più
+  dettaglio, giù=periodo più ampio), listener `wheel` nativo non-passivo con `preventDefault`. I disegni
+  si re-indicizzano dai tempi canonici (stesso meccanismo del cambio timeframe → nessuna regressione).
+- **Scala prezzi con drag sull'asse destro** (`yScaleFactor`, dominio attorno al midpoint), gutter
+  `cursor-ns-resize` disattivato durante il disegno per non rubare il posizionamento delle ancore.
+
+**Sync campanella lista ↔ alert dal grafico**: la lista legge `["/api/alerts"]` e mostra la campanella
+gialla se il titolo ha un alert attivo; si aggiorna subito su crea/rimuovi/arma/disarma dal grafico.
+
+**Cursori e stabilità divisore**: barra divisore `cursor-col-resize`, freccia `cursor-pointer`; un solo
+`ResizablePanelGroup` (`autoSaveId="trading-split"`) **mai rimontato** al cambio tab; lista collassabile
+in place (pannello `collapsible` + ref imperativo), sync collapse solo su mismatch → niente scossoni.
+
+**Bugfix "grafico vuoto al rientro"**: `selectedSymbol` persistito (`trading:selectedSymbol`), rimosso il
+reset al mount, auto-selezione a livello pagina via funzione pura `resolveSelectedSymbol` (gira anche a
+lista nascosta).
+
+**Fix render Volume/RSI**: pannelli `flex-col` con header `shrink-0` + wrapper `flex-1 min-h-0` +
+`ResponsiveContainer height="100%"` (eliminato il fragile `calc(100% - 28px)` che collassava a 0px in
+flex). **RSI calcolato sulla serie completa** e poi finestrato (nessun ricalcolo su serie troncata).
+
+**Miglioramento sotto-aree Volume/RSI (verso il riferimento `Docs/img/Esempio web.jpg`):**
+- Sotto-pannelli più alti (`h-36` in `fillHeight`), **barre volume verdi/rosse** per rialzo/ribasso
+  (`<Cell>` con i colori candela), RSI più leggibile (linea 1.75, midline 50, ticks 30/50/70).
+- **Label lateralizzata** (overlay piccolo, niente header a barra → più altezza al grafico).
+- **Scala verticale per sotto-area** (gutter destro `ns-resize`, `volScaleFactor`/`rsiScaleFactor`).
+- **Pulsanti hover** su ogni sotto-area: inverti ordine (`subPanelOrder`) e chiudi.
+- **Asse temporale allineato** tra main/Volume/RSI (`SUB_AXIS_WIDTH=60` su tutti gli YAxis destri);
+  verificato che l'overlay dei disegni si adatta (legge `rc.offset` a ogni render).
+
+**Verifica dati Yahoo (a supporto)**: OHLC presente per tutti i timeframe; **volume disponibile
+direttamente** (no calcolo); **RSI calcolato client-side** dai close; punti sufficienti per RSI(14) a
+tutti i timeframe tranne il caso limite `1S` (~15 punti → 1 solo valore RSI). Dettaglio: `Docs/img/`.
+
+**Validazione**: `test-engineer` coinvolto su ogni incremento. Qualità finale: `npm run check` 0 ·
+`npm run lint` 0 · `npm test` **120/120** · `npm run build` OK. Immagini di riferimento aggiunte in
+`Docs/img/` (`Esempio web.jpg` = target, `Esempio web_APP.jpg` = stato app).
+
 ## 2026-07-12 (sessione autonoma) — Trading, evoluzione grafico: punti 1-4 (5-6 rinviati)
 
 **Contesto:** l'utente ha chiesto di lavorare in autonomia sui prossimi step della vista Trading

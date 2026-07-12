@@ -22,6 +22,7 @@ import {
   X,
   Eye,
   EyeOff,
+  ArrowUpDown,
 } from "lucide-react";
 import { ChartData } from "@shared/schema";
 import {
@@ -35,13 +36,14 @@ import {
   ReferenceLine,
   BarChart,
   Bar,
+  Cell,
   ComposedChart,
   Customized,
   LineChart,
   Line,
 } from "recharts";
 import { cn } from "@/lib/utils";
-import { computeCandleGeometry } from "@/lib/candles";
+import { computeCandleGeometry, CANDLE_UP_COLOR, CANDLE_DOWN_COLOR } from "@/lib/candles";
 import { computeRSI } from "@/lib/indicators";
 import { formatAxisTick, formatTooltipLabel, selectTicks } from "@/lib/chart-axis";
 import {
@@ -242,12 +244,108 @@ function Candle(props: any) {
   );
 }
 
+// Minimum candles kept visible when zooming in with the wheel.
+const MIN_VISIBLE_BARS = 10;
+// Shared right-axis width so main chart, Volume and RSI plot areas line up
+// (same time axis alignment across all sub-panels).
+const SUB_AXIS_WIDTH = 60;
+
+/** Compact volume tick labels (150m, 32k…) so the axis stays narrow and readable. */
+function fmtVolTick(v: number): string {
+  if (v >= 1e9) return `${(v / 1e9).toFixed(1)}b`;
+  if (v >= 1e6) return `${(v / 1e6).toFixed(0)}m`;
+  if (v >= 1e3) return `${(v / 1e3).toFixed(0)}k`;
+  return `${Math.round(v)}`;
+}
+
+// A sub-panel under the main chart (Volume or RSI). The label is a small lateral
+// overlay (no header row → more chart height); on hover it reveals reorder/close
+// buttons; a right-edge gutter drags the vertical scale (like the price axis).
+function SubPanel({
+  label,
+  heightClass,
+  scaleFactor,
+  setScaleFactor,
+  onReorder,
+  onClose,
+  children,
+}: {
+  label: string;
+  heightClass: string;
+  scaleFactor: number;
+  setScaleFactor: (f: number) => void;
+  onReorder: () => void;
+  onClose: () => void;
+  children: React.ReactElement;
+}) {
+  const dragRef = useRef<{ startY: number; startFactor: number } | null>(null);
+  return (
+    <div className={cn("group relative border-t border-border", heightClass)}>
+      <span className="pointer-events-none absolute left-1 top-0.5 z-10 rounded bg-card/70 px-1 text-[10px] font-medium text-muted-foreground">
+        {label}
+      </span>
+      <div className="absolute right-12 top-0.5 z-20 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+        <button
+          onClick={onReorder}
+          title="Inverti l'ordine delle sottoaree"
+          aria-label="Inverti ordine sottoaree"
+          className="flex h-5 w-5 items-center justify-center rounded border border-border bg-card text-muted-foreground hover:text-foreground"
+        >
+          <ArrowUpDown className="h-3 w-3" />
+        </button>
+        <button
+          onClick={onClose}
+          title="Chiudi la sottoarea"
+          aria-label="Chiudi sottoarea"
+          className="flex h-5 w-5 items-center justify-center rounded border border-border bg-card text-muted-foreground hover:text-foreground"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      </div>
+      <div className="h-full w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          {children}
+        </ResponsiveContainer>
+      </div>
+      <div
+        className="absolute top-0 right-0 z-10 h-full w-10 cursor-ns-resize"
+        title="Trascina su/giù per regolare la scala verticale"
+        onPointerDown={(e) => {
+          e.preventDefault();
+          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+          dragRef.current = { startY: e.clientY, startFactor: scaleFactor };
+        }}
+        onPointerMove={(e) => {
+          const s = dragRef.current;
+          if (!s) return;
+          const dy = s.startY - e.clientY;
+          setScaleFactor(Math.max(0.2, Math.min(10, s.startFactor * (1 + dy / 200))));
+        }}
+        onPointerUp={(e) => {
+          dragRef.current = null;
+          (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+        }}
+      />
+    </div>
+  );
+}
+
 export default function StockChart({ symbol, currentPrice, fillHeight = false }: StockChartProps) {
   const [selectedTimeframe, setSelectedTimeframe] = useState("1Y");
   const [chartType, setChartType] = useState<"line" | "candlestick">("line");
   const [showAlertModal, setShowAlertModal] = useState(false);
   const [showVolume, setShowVolume] = useState(true);
   const [showRsi, setShowRsi] = useState(false);
+  // Horizontal zoom (number of visible bars; null = all) and vertical price-scale
+  // zoom factor, both driven by desktop mouse interactions on the chart.
+  const [visibleCount, setVisibleCount] = useState<number | null>(null);
+  const [yScaleFactor, setYScaleFactor] = useState(1);
+  const yDragRef = useRef<{ startY: number; startFactor: number } | null>(null);
+  // Sub-panels (Volume / RSI): render order (swappable) + independent vertical
+  // scale factors driven by their own right-edge drag gutter.
+  const [subPanelOrder, setSubPanelOrder] = useState<Array<"volume" | "rsi">>(["volume", "rsi"]);
+  const [volScaleFactor, setVolScaleFactor] = useState(1);
+  const [rsiScaleFactor, setRsiScaleFactor] = useState(1);
   // Tooltip + current-price level line. Can be hidden so they don't get in the
   // way while drawing a trend line.
   const [showPriceGuides, setShowPriceGuides] = useState(true);
@@ -355,16 +453,27 @@ export default function StockChart({ symbol, currentPrice, fillHeight = false }:
     }));
   };
 
-  const chartDataFormatted = chartData ? formatChartData(chartData.data) : [];
+  // Horizontal zoom: show only the last `visibleBars` candles (wheel adjusts it).
+  const allFormatted = chartData ? formatChartData(chartData.data) : [];
+  const totalBars = allFormatted.length;
+  const visibleBars =
+    visibleCount == null ? totalBars : Math.max(MIN_VISIBLE_BARS, Math.min(visibleCount, totalBars));
+  const startIdx = totalBars > visibleBars ? totalBars - visibleBars : 0;
+  const chartDataFormatted = allFormatted.slice(startIdx);
   const n = chartDataFormatted.length;
 
-  // RSI(14) series, aligned to the candles (only computed when the panel is on).
+  // RSI(14): computed on the FULL series (so its warm-up uses all history), then
+  // sliced to the same visible window — zooming in never re-seeds it on a truncated
+  // range and never blanks it out for lack of warm-up bars.
   const rsiData = showRsi
     ? (() => {
-        const v = computeRSI(chartDataFormatted.map((d) => d.close));
-        return chartDataFormatted.map((d, i) => ({ timestamp: d.timestamp, rsi: v[i] }));
+        const full = computeRSI(allFormatted.map((d) => d.close));
+        return chartDataFormatted.map((d, i) => ({ timestamp: d.timestamp, rsi: full[startIdx + i] }));
       })()
     : [];
+
+  // Max volume in the visible window (for the Volume sub-panel's scalable domain).
+  const maxVol = chartDataFormatted.reduce((m, d) => Math.max(m, d.volume || 0), 0) || 1;
 
   // Shared Y domain from real highs/lows so candle wicks are never clipped.
   const priceExtent = chartDataFormatted.reduce(
@@ -373,7 +482,12 @@ export default function StockChart({ symbol, currentPrice, fillHeight = false }:
   );
   const pad =
     priceExtent.max > priceExtent.min ? (priceExtent.max - priceExtent.min) * 0.05 : 1;
-  const yDomain: [number, number] = [priceExtent.min - pad, priceExtent.max + pad];
+  // Vertical price-scale zoom: shrink/expand the domain around its midpoint.
+  const baseMin = priceExtent.min - pad;
+  const baseMax = priceExtent.max + pad;
+  const yMid = (baseMin + baseMax) / 2;
+  const yHalf = ((baseMax - baseMin) / 2) / yScaleFactor;
+  const yDomain: [number, number] = [yMid - yHalf, yMid + yHalf];
 
   const lastClose = n > 0 ? chartDataFormatted[n - 1].close : undefined;
   const refPrice = currentPrice ?? lastClose ?? 0;
@@ -381,6 +495,32 @@ export default function StockChart({ symbol, currentPrice, fillHeight = false }:
   // Compact, uncrowded X ticks chosen from the real timestamps.
   const timestamps = chartDataFormatted.map((d) => d.timestamp);
   const xTicks = selectTicks(timestamps, selectedTimeframe);
+
+  // Reset zooms/scales when the series changes (new symbol or timeframe).
+  useEffect(() => {
+    setVisibleCount(null);
+    setYScaleFactor(1);
+    setVolScaleFactor(1);
+    setRsiScaleFactor(1);
+  }, [symbol, selectedTimeframe]);
+
+  // Mouse wheel over the plot = horizontal zoom. Scroll up zooms in (fewer bars,
+  // more detail); scroll down zooms out. Attached natively so we can preventDefault
+  // (avoid the page scrolling) — React's onWheel is passive.
+  useEffect(() => {
+    const el = plotWrapRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      setVisibleCount((prev) => {
+        const base = prev == null ? totalBars : prev;
+        const next = Math.round(base * (e.deltaY > 0 ? 1.2 : 1 / 1.2));
+        return Math.max(MIN_VISIBLE_BARS, Math.min(totalBars, next));
+      });
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [totalBars]);
 
   const nextChartType = chartType === "line" ? "candlestick" : "line";
 
@@ -1204,6 +1344,7 @@ export default function StockChart({ symbol, currentPrice, fillHeight = false }:
         minTickGap={20}
       />
       <YAxis
+        width={SUB_AXIS_WIDTH}
         stroke="var(--muted-foreground)"
         fontSize={12}
         domain={yDomain}
@@ -1516,83 +1657,128 @@ export default function StockChart({ symbol, currentPrice, fillHeight = false }:
                 )}
               </ResponsiveContainer>
             )}
+
+            {/* Right price-axis gutter: drag vertically to change the price scale
+                (up = expand/zoom in, down = compress). Disabled while a drawing
+                mode is active so it never steals a click meant to place an anchor
+                on the right-most candle. */}
+            {!isLoading && chartDataFormatted.length > 0 && !drawMode && (
+              <div
+                className="absolute top-0 right-0 z-10 h-full w-10 cursor-ns-resize"
+                title="Trascina su/giù per regolare la scala dei prezzi"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                  yDragRef.current = { startY: e.clientY, startFactor: yScaleFactor };
+                }}
+                onPointerMove={(e) => {
+                  const s = yDragRef.current;
+                  if (!s) return;
+                  const dy = s.startY - e.clientY; // drag up = positive = zoom in
+                  setYScaleFactor(Math.max(0.2, Math.min(10, s.startFactor * (1 + dy / 200))));
+                }}
+                onPointerUp={(e) => {
+                  yDragRef.current = null;
+                  (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+                }}
+              />
+            )}
           </div>
 
-          {/* Volume Indicator */}
-          {showVolume && !isLoading && chartDataFormatted.length > 0 && (
-            <div className={cn("border-t border-border", fillHeight ? "h-28 shrink-0" : "h-24")}>
-              <div className="flex items-center px-2 py-1 bg-muted">
-                <span className="text-xs font-medium text-foreground">Volume</span>
-              </div>
-              <ResponsiveContainer width="100%" height="calc(100% - 28px)">
-                <BarChart data={chartDataFormatted} margin={{ top: 0, right: 12, bottom: 0, left: LEFT_MARGIN }}>
-                  <XAxis
-                    dataKey="timestamp"
-                    type="category"
-                    ticks={xTicks}
-                    tickFormatter={(ts: number) => formatAxisTick(ts, selectedTimeframe)}
-                    stroke="var(--muted-foreground)"
-                    fontSize={10}
-                    axisLine={false}
-                  />
-                  <YAxis
-                    stroke="var(--muted-foreground)"
-                    fontSize={10}
-                    orientation="right"
-                    axisLine={false}
-                  />
-                  <Bar
-                    dataKey="volume"
-                    fill="var(--muted-foreground)"
-                    opacity={0.6}
-                    isAnimationActive={false}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-
-          {/* RSI Indicator (14) */}
-          {showRsi && !isLoading && chartDataFormatted.length > 0 && (
-            <div className={cn("border-t border-border", fillHeight ? "h-28 shrink-0" : "h-24")}>
-              <div className="flex items-center px-2 py-1 bg-muted">
-                <span className="text-xs font-medium text-foreground">RSI (14)</span>
-              </div>
-              <ResponsiveContainer width="100%" height="calc(100% - 28px)">
-                <LineChart data={rsiData} margin={{ top: 0, right: 12, bottom: 0, left: LEFT_MARGIN }}>
-                  <XAxis
-                    dataKey="timestamp"
-                    type="category"
-                    ticks={xTicks}
-                    tickFormatter={(ts: number) => formatAxisTick(ts, selectedTimeframe)}
-                    stroke="var(--muted-foreground)"
-                    fontSize={10}
-                    axisLine={false}
-                  />
-                  <YAxis
-                    domain={[0, 100]}
-                    ticks={[30, 70]}
-                    stroke="var(--muted-foreground)"
-                    fontSize={10}
-                    orientation="right"
-                    axisLine={false}
-                    width={40}
-                  />
-                  <ReferenceLine y={70} stroke="var(--muted-foreground)" strokeDasharray="3 3" />
-                  <ReferenceLine y={30} stroke="var(--muted-foreground)" strokeDasharray="3 3" />
-                  <Line
-                    type="monotone"
-                    dataKey="rsi"
-                    stroke="var(--primary)"
-                    strokeWidth={1.5}
-                    dot={false}
-                    isAnimationActive={false}
-                    connectNulls
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          )}
+          {/* Sub-panels (Volume / RSI): rendered in the current (swappable) order,
+              each taller, with lateral label, hover reorder/close and a vertical
+              scale gutter. Same X axis (timestamp/ticks) as the main chart. */}
+          {!isLoading && chartDataFormatted.length > 0 &&
+            subPanelOrder.map((key) => {
+              const heightClass = fillHeight ? "h-36 shrink-0" : "h-28";
+              if (key === "volume" && showVolume) {
+                return (
+                  <SubPanel
+                    key="volume"
+                    label="Volume"
+                    heightClass={heightClass}
+                    scaleFactor={volScaleFactor}
+                    setScaleFactor={setVolScaleFactor}
+                    onReorder={() => setSubPanelOrder((o) => [...o].reverse())}
+                    onClose={() => setShowVolume(false)}
+                  >
+                    <BarChart data={chartDataFormatted} margin={{ top: 6, right: 12, bottom: 0, left: LEFT_MARGIN }}>
+                      <XAxis
+                        dataKey="timestamp"
+                        type="category"
+                        ticks={xTicks}
+                        tickFormatter={(ts: number) => formatAxisTick(ts, selectedTimeframe)}
+                        stroke="var(--muted-foreground)"
+                        fontSize={10}
+                        axisLine={false}
+                      />
+                      <YAxis
+                        width={SUB_AXIS_WIDTH}
+                        orientation="right"
+                        stroke="var(--muted-foreground)"
+                        fontSize={10}
+                        axisLine={false}
+                        domain={[0, maxVol / volScaleFactor]}
+                        tickFormatter={fmtVolTick}
+                      />
+                      <Bar dataKey="volume" isAnimationActive={false}>
+                        {chartDataFormatted.map((d, i) => (
+                          <Cell key={i} fill={d.close >= d.open ? CANDLE_UP_COLOR : CANDLE_DOWN_COLOR} opacity={0.7} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </SubPanel>
+                );
+              }
+              if (key === "rsi" && showRsi) {
+                const rsiHalf = 50 / rsiScaleFactor;
+                return (
+                  <SubPanel
+                    key="rsi"
+                    label="RSI (14)"
+                    heightClass={heightClass}
+                    scaleFactor={rsiScaleFactor}
+                    setScaleFactor={setRsiScaleFactor}
+                    onReorder={() => setSubPanelOrder((o) => [...o].reverse())}
+                    onClose={() => setShowRsi(false)}
+                  >
+                    <LineChart data={rsiData} margin={{ top: 8, right: 12, bottom: 0, left: LEFT_MARGIN }}>
+                      <XAxis
+                        dataKey="timestamp"
+                        type="category"
+                        ticks={xTicks}
+                        tickFormatter={(ts: number) => formatAxisTick(ts, selectedTimeframe)}
+                        stroke="var(--muted-foreground)"
+                        fontSize={10}
+                        axisLine={false}
+                      />
+                      <YAxis
+                        width={SUB_AXIS_WIDTH}
+                        orientation="right"
+                        domain={[Math.max(0, 50 - rsiHalf), Math.min(100, 50 + rsiHalf)]}
+                        ticks={[30, 50, 70]}
+                        stroke="var(--muted-foreground)"
+                        fontSize={10}
+                        axisLine={false}
+                      />
+                      <ReferenceLine y={70} stroke="var(--muted-foreground)" strokeDasharray="3 3" />
+                      <ReferenceLine y={50} stroke="var(--border)" strokeDasharray="2 4" />
+                      <ReferenceLine y={30} stroke="var(--muted-foreground)" strokeDasharray="3 3" />
+                      <Line
+                        type="monotone"
+                        dataKey="rsi"
+                        stroke="var(--primary)"
+                        strokeWidth={1.75}
+                        dot={false}
+                        isAnimationActive={false}
+                        connectNulls
+                      />
+                    </LineChart>
+                  </SubPanel>
+                );
+              }
+              return null;
+            })}
         </div>
       </div>
 
