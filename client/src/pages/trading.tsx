@@ -10,7 +10,7 @@ import AlertModal from "@/components/alert-modal";
 import type { Watchlist, WatchlistItem, Portfolio, PortfolioHolding, StockQuote } from "@shared/schema";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useLocalStorage } from "@/hooks/use-local-storage";
-import { orderTabs, moveKey, tabKey, type TradingTab } from "@/lib/trading";
+import { orderTabs, moveKey, tabKey, resolveSelectedSymbol, type TradingTab } from "@/lib/trading";
 import { cn } from "@/lib/utils";
 
 const num2 = (n?: number | null) =>
@@ -35,7 +35,7 @@ export default function TradingPage() {
   const [order, setOrder] = useLocalStorage<string[]>("trading:tabOrder", []);
   const [activeKey, setActiveKey] = useLocalStorage<string | null>("trading:activeTab", null);
   const [listCollapsed, setListCollapsed] = useLocalStorage<boolean>("trading:listCollapsed", false);
-  const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
+  const [selectedSymbol, setSelectedSymbol] = useLocalStorage<string | null>("trading:selectedSymbol", null);
   const dragKey = useRef<string | null>(null);
 
   const allTabs: TradingTab[] = useMemo(
@@ -49,11 +49,37 @@ export default function TradingPage() {
   const orderedTabs = useMemo(() => orderTabs(allTabs, order), [allTabs, order]);
   const active = orderedTabs.find((t) => t.key === activeKey) ?? orderedTabs[0] ?? null;
 
-  // Reset the chart selection when the active collection changes; each list
-  // auto-selects its first row on load.
+  // Symbols of the active collection are fetched HERE (page level), not only
+  // inside the list, so a valid chart symbol can be resolved even when the list
+  // is hidden (collapsed). React Query dedupes these against the list's queries.
+  const activePortfolioId = active?.kind === "portfolio" ? active.id : null;
+  const activeWatchlistId = active?.kind === "watchlist" ? active.id : null;
+  const { data: activeHoldings } = useQuery<PortfolioHolding[]>({
+    queryKey: [`/api/portfolios/${activePortfolioId}/holdings`],
+    enabled: activePortfolioId != null,
+  });
+  const { data: activeItems } = useQuery<WatchlistItem[]>({
+    queryKey: [`/api/watchlists/${activeWatchlistId}/items`],
+    enabled: activeWatchlistId != null,
+  });
+  const activeSymbols = useMemo(
+    () =>
+      active?.kind === "portfolio"
+        ? (activeHoldings ?? []).map((h) => h.symbol)
+        : active?.kind === "watchlist"
+          ? (activeItems ?? []).map((i) => i.symbol)
+          : [],
+    [active?.kind, activeHoldings, activeItems],
+  );
+
+  // Keep a valid chart symbol: restore the persisted one if it still belongs to
+  // the active collection, otherwise fall back to the first row. Runs regardless
+  // of list visibility, so returning to /trading with the list hidden — or after
+  // the persisted symbol was dropped — never leaves the chart empty.
   useEffect(() => {
-    setSelectedSymbol(null);
-  }, [active?.key]);
+    const next = resolveSelectedSymbol(activeSymbols, selectedSymbol);
+    if (next !== selectedSymbol) setSelectedSymbol(next);
+  }, [activeSymbols, selectedSymbol, setSelectedSymbol]);
 
   const handleDrop = (targetKey: string) => {
     const from = dragKey.current;
@@ -216,12 +242,6 @@ function PortfolioList({
   const quotes = useQuoteMap(holdings.map((h) => h.symbol));
   const [alertFor, setAlertFor] = useState<AlertTarget>(null);
 
-  useEffect(() => {
-    if (holdings.length > 0 && (!selectedSymbol || !holdings.some((h) => h.symbol === selectedSymbol))) {
-      onSelect(holdings[0].symbol);
-    }
-  }, [holdings, selectedSymbol, onSelect]);
-
   return (
     <div className="h-full overflow-auto">
       <table className="w-full text-xs">
@@ -300,12 +320,6 @@ function WatchlistList({
   });
   const quotes = useQuoteMap(items.map((i) => i.symbol));
   const [alertFor, setAlertFor] = useState<AlertTarget>(null);
-
-  useEffect(() => {
-    if (items.length > 0 && (!selectedSymbol || !items.some((i) => i.symbol === selectedSymbol))) {
-      onSelect(items[0].symbol);
-    }
-  }, [items, selectedSymbol, onSelect]);
 
   return (
     <div className="h-full overflow-auto">

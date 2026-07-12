@@ -460,6 +460,15 @@ Dettaglio in `Docs/CHANGELOG_DECISIONS.md`.
 - **Verifica locale in corso**: dev server su MemStorage (porta 5000, `DATABASE_URL=` per forzare Mem;
   il `.env` punta a Postgres locale non attivo) con dati demo seed (watchlist Tech Stocks + portafoglio
   "Demo Multi" multivaluta). Fermare il server con `TaskStop` (niente `Stop-Process`).
+- **Fix UX (freccia divisore + lista stretta, poi bugfix selezione):** la linguetta di ripristino è un
+  rail full-height sempre visibile sul bordo sinistro; lista default/min ridotta (30/18/12%), tabelle
+  compattate. **Bugfix grafico vuoto al rientro su `/trading`**: `selectedSymbol` ora persistito
+  (`trading:selectedSymbol`), rimosso il reset al mount, auto-selezione spostata a livello pagina via
+  funzione pura `resolveSelectedSymbol(activeSymbols, current)` (`lib/trading.ts`) in un effetto che gira
+  **anche a lista nascosta**. Validato dal test-engineer: check/lint/build verdi, **120 test** (+4 su
+  `resolveSelectedSymbol`). Nota residua: micro-flicker cross-tab in loading (mostra il simbolo del tab
+  precedente finché la nuova collezione carica) — tradeoff voluto "no flicker a null". Persistenza reale
+  e ramo `listCollapsed` restano da verificare manualmente (nessun render-test React nel progetto).
 
 ## Vista Trading — evoluzione grafico (spec utente 2026-07-12): punti 1-4 FATTI, 5-6 RIMANENTI
 Implementati in sessione autonoma 2026-07-12 (commit locali `1a30412`, incremento 2 successivo; NON pushati):

@@ -36,6 +36,21 @@ export function orderTabs(all: TradingTab[], storedOrder: string[]): TradingTab[
 }
 
 /**
+ * Resolve which symbol the chart should show, independent of whether the list is
+ * visible. Keeps the current selection if it still belongs to the active
+ * collection; otherwise falls back to the first symbol. When there are no symbols
+ * yet (still loading / empty) the current value is preserved (no flicker to null).
+ */
+export function resolveSelectedSymbol(
+  activeSymbols: string[],
+  current: string | null,
+): string | null {
+  if (activeSymbols.length === 0) return current;
+  if (current && activeSymbols.includes(current)) return current;
+  return activeSymbols[0];
+}
+
+/**
  * Move `from` so it sits at the current position of `to` (drag-and-drop reorder).
  * Returns a new array; unchanged if either key is missing or they are equal.
  */
