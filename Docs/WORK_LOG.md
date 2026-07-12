@@ -2,6 +2,54 @@
 
 Registro cronologico degli incrementi. Voce più recente in alto.
 
+## 2026-07-12 — Portafogli virtuali multipli + Modifica/guardia valute + Vista Trading desktop
+
+**1) Portafogli virtuali (schema DB + API + UI) — LIVE su Supabase/Render.**
+- Nuove tabelle `portfolios` e `portfolio_holdings`. Denaro/quantità/prezzi/commissioni in
+  **`numeric(p,s)`** via `customType decimalNumber` in `shared/schema.ts` (colonna DB `numeric`,
+  tipo TS `number`: `fromDriver Number` / `toDriver String`); FK `user_id`/`portfolio_id` **NOT NULL**.
+- Portafoglio: `baseCurrency`, `multiCurrency` (dichiarato alla creazione), commissioni EU/USA
+  (% + fisso, default 0, nessun valore broker hardcoded). Posizione aggregata `(portfolio_id, symbol)`
+  unica, con `quantity`, `avgPrice` (media pesata **spese incluse**), `totalCost`.
+- API `GET/POST/DELETE /api/portfolios`, `GET/POST /api/portfolios/:id/holdings`,
+  `DELETE /api/portfolios/holdings/:id`; upsert con ricalcolo media, guardia valuta (non-multi
+  rifiuta valuta ≠ base), toggle `feesIncluded` (import storico: commissione 0, prezzo = costo all-in).
+- Util pure `shared/portfolio.ts` (`classifyMarket`, `commissionFor`, `applyBuy`). Storage in
+  MemStorage + DatabaseStorage. UI: tab Watchlist/Portafoglio nella `WatchlistModal` + popup acquisto,
+  nuova pagina `/portfolios`. Test `portfolio-math` + `portfolio-api`.
+- **`db:push` su Supabase eseguito dall'utente** ("Changes applied") + commit `deb9955` pushato →
+  Render redeploy; **round-trip live verificato** (numeric→number esatti, feesIncluded, guardia, cascade).
+
+**2) Modifica portafoglio + guardia valute — LIVE (commit `d2018e1`).**
+- `PUT /api/portfolios/:id` (`updatePortfolio` in storage) + `EditPortfolioDialog` in `/portfolios`
+  (nome, valuta base, multivaluta, commissioni EU/USA precompilate). Guardia di consistenza: **vieta
+  `multiCurrency=false` o cambio valuta base se esistono posizioni in valuta diversa dalla base
+  risultante**, con messaggio esplicito surfacciato nel toast. Verificato in produzione.
+
+**3) Vista Trading desktop — questa parte è oggetto del commit locale di consolidamento (no push).**
+- Nuova pagina **`/trading`** desktop-only: `useIsMobile()` → su mobile mostra avviso + link a
+  `/watchlist` e `/portfolios` (**mobile invariato**).
+- **Tab Watchlist/Portafogli trascinabili** (drag HTML5 nativo, **nessuna nuova dipendenza**) con
+  **ordine persistente** (`localStorage`); tab attiva ricordata.
+- **Layout lista+grafico ridimensionabile** (`react-resizable-panels`, `autoSaveId` **distinto per
+  tipo** → larghezza memorizzata; grafico Watchlist più ampio di default); **pulsante grafico
+  fullscreen/ripristino** con stato persistito.
+- **Portfolio**: colonne Descrizione · Prezzo · P&L oggi · P&L % · Prezzo medio · Quantità · Valore
+  di carico · 🔔. **Watchlist**: compatta (Descrizione · Prezzo · P&L % · 🔔). Prezzi/P&L live da
+  `/api/stocks/quote/:symbol`; 🔔 → `AlertModal`. Riuso `StockChart` invariato.
+- Logica pura `client/src/lib/trading.ts` (`orderTabs`/`moveKey`/`tabKey`) + `tests/trading-order.test.ts`;
+  hook `client/src/hooks/use-local-storage.ts`; route in `App.tsx`; voce navbar "Trading".
+
+**Qualità (finale):** `npm run check` 0 · `npm run lint` 0 · `npm test` **112/112** · `npm run build` OK.
+
+**Prossimo step registrato (vista Trading — evoluzione grafico):** vedi HANDOVER §5 e `memory/MEMORY.md`.
+Sintesi: (1) sostituire il fullscreen con una **linguetta a freccia sul divisore** (← nasconde la lista/
+grafico a tutta larghezza, → ripristina; visibile anche a lista nascosta); (2) **lista più compatta**,
+grafico più largo già nella vista normale; (3) **altezza grafico dinamica** in base ai pannelli attivi;
+(4) **pannelli Volume e RSI attivabili**; (5) interazioni desktop (**rotella** = intervallo orizzontale,
+**drag verticale sull'asse prezzi** = scala verticale); (6) interazioni **touch** (pinch zoom, drag
+verticale sull'asse prezzi), senza toccare il resto del layout mobile.
+
 ## 2026-07-10 — Deploy cloud live (Render + Supabase) + allineamento documentazione
 
 **Tipo:** allineamento documentale (questa sessione). Il deploy stesso è stato fatto

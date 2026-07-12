@@ -3,9 +3,16 @@
 > Documento di ripresa sessione. Leggere PRIMA di riprendere, insieme a
 > `PROJECT_STATUS.md`, `CHANGELOG_DECISIONS.md`, `WORK_LOG.md`, `memory/MEMORY.md`.
 
-**Ultimo aggiornamento:** 2026-07-10
-**Stato qualità (ultima verifica nota, 2026-07-06):** `npm run check` 0 · `npm run lint` 0 ·
-`npm test` **89/89** · `npm run build` OK.
+**Ultimo aggiornamento:** 2026-07-12
+**Stato qualità (ultima verifica, 2026-07-12):** `npm run check` 0 · `npm run lint` 0 ·
+`npm test` **112/112** · `npm run build` OK.
+
+**PORTAFOGLI VIRTUALI + VISTA TRADING (2026-07-12):** aggiunti portafogli virtuali multipli
+(tabelle `portfolios`/`portfolio_holdings`, `numeric` per denaro via customType, media pesata
+spese incluse, commissioni EU/USA, multivaluta) — **LIVE su Supabase/Render** (commit `deb9955`);
+pulsante **Modifica** portafoglio + guardia valute — **LIVE** (commit `d2018e1`); **Vista Trading
+desktop** `/trading` (tab trascinabili persistenti, lista+grafico ridimensionabile, fullscreen) —
+**committata in locale, NON pushata**. Dettaglio in `WORK_LOG.md` (2026-07-12) e `memory/MEMORY.md`.
 **GATE CHIUSO (2026-07-06):** `npm run db:push` eseguito su conferma utente (Docker Desktop e
 container `finwatch-postgres` avviati prima del push; DATABASE_URL passato inline). Output
 drizzle-kit: "Changes applied" → tabella `drawings` creata secondo l'output drizzle (nessuna
@@ -69,6 +76,28 @@ npm run build      # build client + bundle server
   parte (le occorrenze "finnhub" in `settings.tsx` sono `finnhubAvailable`). Verde dopo rimozione.
 
 ## 5. Decisioni aperte (richiedono l'utente)
+- **Portafogli virtuali multipli** — **FATTO E LIVE 2026-07-12** (Supabase/Render). Schema
+  `portfolios`/`portfolio_holdings` (`numeric` per denaro via customType, FK NOT NULL), API,
+  UI (tab in `WatchlistModal` + pagina `/portfolios`), Modifica portafoglio + guardia valute.
+  Analisi separata pronta per un **motore commissionale multi-broker** (broker/piani/regole/costi
+  terzi/validità temporale, exchange-scope, FX spread%/fisso) — **NON implementato**, dietro
+  decisione/gate DB.
+- **Vista Trading desktop (`/trading`)** — **FATTO 2026-07-12, committata in locale, NON pushata.**
+  Desktop-only (mobile invariato); tab Watchlist/Portafogli trascinabili con ordine persistente
+  (`localStorage`); lista+grafico ridimensionabile (`react-resizable-panels`, larghezza memorizzata
+  per tipo); fullscreen grafico. **Prossimo step (spec utente 2026-07-12, da implementare):**
+  1. **Linguetta a freccia sul divisore** al posto del fullscreen: `←` nasconde del tutto la lista
+     (grafico a tutta larghezza), `→` ripristina la lista alla larghezza precedente; il comando
+     resta visibile sul bordo di separazione **anche a lista nascosta**.
+  2. **Lista titoli ridotta al minimo indispensabile**; grafico più largo già nella vista normale.
+  3. **Altezza grafico dinamica**: senza Volume/RSI il grafico principale occupa tutta l'altezza;
+     con Volume e/o RSI attivi l'altezza si distribuisce tra grafico principale, Volume e RSI.
+  4. **Pannelli Volume e RSI attivabili/disattivabili** dall'utente.
+  5. **Interazioni desktop grafico**: rotella mouse = intervallo orizzontale visibile (un verso più
+     ampio, l'altro più dettaglio); drag verticale sull'**asse prezzi destro** = scala verticale
+     (su = amplia, giù = restringe); candele/linee/indicatori si riadattano alla nuova scala.
+  6. **Interazioni touch**: pinch a due dita = zoom; drag verticale con un dito sull'area asse prezzi
+     = scala verticale. **Non modificare** il resto del layout mobile oltre a queste interazioni.
 - ~~**PostgreSQL (D1/D4)**~~ — **FATTO 2026-07-05** (attivato e verificato, vedi §6).
 - **Monitoraggio alert fase 2** — scheduler + `triggeredAt` **FATTI (2026-07-06)**; resta la
   logica di notifica (fuori scope). **Modello C DECISO e IMPLEMENTATO (2026-07-06)**: tutti i

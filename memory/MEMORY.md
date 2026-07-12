@@ -441,6 +441,38 @@ Dettaglio in `Docs/CHANGELOG_DECISIONS.md`.
 - Colonne denaro/quantità = **`numeric(p,s)`** via `customType decimalNumber` (DB numeric, TS number);
   FK `user_id`/`portfolio_id` **NOT NULL**.
 
+## Modifica portafoglio + guardia valute (2026-07-12, LIVE — commit d2018e1)
+- `PUT /api/portfolios/:id` (`updatePortfolio` Mem+Database) + `EditPortfolioDialog` in `/portfolios`
+  (nome, valuta base, multivaluta, commissioni EU/USA). **Guardia**: vieta `multiCurrency=false` o
+  cambio valuta base se esistono posizioni in valuta diversa dalla base risultante, messaggio esplicito
+  surfacciato nel toast. Pushato → Render, verificato in produzione (marker "Modifica portafoglio").
+
+## Vista Trading desktop (2026-07-12, FATTA — committata in locale, NON pushata)
+- Nuova pagina **`/trading`** desktop-only (`useIsMobile` → avviso + link su mobile; **mobile invariato**).
+  Tab Watchlist/Portafogli **trascinabili** (drag HTML5, nessuna dep) con **ordine persistente**
+  (`localStorage`); lista+grafico **ridimensionabile** (`react-resizable-panels`, `autoSaveId` per tipo →
+  larghezza memorizzata, grafico watchlist più ampio); **fullscreen grafico** persistito.
+- Portfolio: Descrizione/Prezzo/P&L oggi/P&L %/Prezzo medio/Quantità/Valore di carico/🔔. Watchlist:
+  compatta (Descrizione/Prezzo/P&L %/🔔). Prezzi/P&L live da quote; 🔔 → AlertModal; `StockChart` invariato.
+- File: `client/src/pages/trading.tsx`, `client/src/lib/trading.ts` (puro: orderTabs/moveKey/tabKey),
+  `client/src/hooks/use-local-storage.ts`, `tests/trading-order.test.ts`, route in `App.tsx`, navbar.
+- Verde: check 0 · lint 0 · **Vitest 112/112** · build OK.
+- **Verifica locale in corso**: dev server su MemStorage (porta 5000, `DATABASE_URL=` per forzare Mem;
+  il `.env` punta a Postgres locale non attivo) con dati demo seed (watchlist Tech Stocks + portafoglio
+  "Demo Multi" multivaluta). Fermare il server con `TaskStop` (niente `Stop-Process`).
+
+## PROSSIMO STEP — Vista Trading, evoluzione grafico (spec utente 2026-07-12, DA FARE)
+1. **Linguetta a freccia sul divisore** al posto del fullscreen: `←` nasconde la lista (grafico a tutta
+   larghezza), `→` ripristina la larghezza precedente; comando visibile sul bordo **anche a lista nascosta**.
+2. **Lista titoli minima**; grafico più largo già in vista normale.
+3. **Altezza grafico dinamica**: senza Volume/RSI il grafico occupa tutta l'altezza; con Volume e/o RSI
+   attivi l'altezza si distribuisce tra grafico principale, Volume e RSI.
+4. **Pannelli Volume e RSI attivabili/disattivabili**.
+5. **Interazioni desktop**: rotella = intervallo orizzontale; drag verticale sull'asse prezzi destro =
+   scala verticale; candele/linee/indicatori si riadattano.
+6. **Interazioni touch**: pinch = zoom; drag verticale un dito sull'asse prezzi = scala verticale.
+   Non toccare il resto del layout mobile.
+
 ## Portafogli virtuali multipli — storico decisioni (2026-07-12, IMPLEMENTATO)
 - Feature nuova: portafogli con posizioni (quantità, prezzo medio spese incluse, costo totale),
   tab Watchlist/Portafoglio nella `WatchlistModal`, popup acquisto, pagina `/portfolios`.
