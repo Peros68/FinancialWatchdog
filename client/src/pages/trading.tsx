@@ -415,9 +415,9 @@ function ChartPanel({ symbol }: { symbol: string | null }) {
           </>
         )}
       </div>
-      <div className="flex-1 overflow-auto p-3">
+      <div className="flex-1 min-h-0 p-2">
         {symbol ? (
-          <StockChart symbol={symbol} currentPrice={quote?.currentPrice} />
+          <StockChart symbol={symbol} currentPrice={quote?.currentPrice} fillHeight />
         ) : (
           <div className="h-full flex items-center justify-center text-muted-foreground">
             Seleziona un titolo dalla lista.

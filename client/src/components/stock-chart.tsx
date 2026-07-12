@@ -37,9 +37,12 @@ import {
   Bar,
   ComposedChart,
   Customized,
+  LineChart,
+  Line,
 } from "recharts";
 import { cn } from "@/lib/utils";
 import { computeCandleGeometry } from "@/lib/candles";
+import { computeRSI } from "@/lib/indicators";
 import { formatAxisTick, formatTooltipLabel, selectTicks } from "@/lib/chart-axis";
 import {
   indexToX,
@@ -67,6 +70,10 @@ import AlertModal from "./alert-modal";
 interface StockChartProps {
   symbol: string;
   currentPrice?: number;
+  // When true the chart fills its parent's height (main plot flexes, Volume/RSI
+  // panels take fixed slices). Default false keeps the legacy fixed-height layout
+  // used by the stock detail page.
+  fillHeight?: boolean;
 }
 
 // Quick period selectors. Convention: minuti in minuscolo (15m); dall'ora in su
@@ -235,11 +242,12 @@ function Candle(props: any) {
   );
 }
 
-export default function StockChart({ symbol, currentPrice }: StockChartProps) {
+export default function StockChart({ symbol, currentPrice, fillHeight = false }: StockChartProps) {
   const [selectedTimeframe, setSelectedTimeframe] = useState("1Y");
   const [chartType, setChartType] = useState<"line" | "candlestick">("line");
   const [showAlertModal, setShowAlertModal] = useState(false);
   const [showVolume, setShowVolume] = useState(true);
+  const [showRsi, setShowRsi] = useState(false);
   // Tooltip + current-price level line. Can be hidden so they don't get in the
   // way while drawing a trend line.
   const [showPriceGuides, setShowPriceGuides] = useState(true);
@@ -349,6 +357,14 @@ export default function StockChart({ symbol, currentPrice }: StockChartProps) {
 
   const chartDataFormatted = chartData ? formatChartData(chartData.data) : [];
   const n = chartDataFormatted.length;
+
+  // RSI(14) series, aligned to the candles (only computed when the panel is on).
+  const rsiData = showRsi
+    ? (() => {
+        const v = computeRSI(chartDataFormatted.map((d) => d.close));
+        return chartDataFormatted.map((d, i) => ({ timestamp: d.timestamp, rsi: v[i] }));
+      })()
+    : [];
 
   // Shared Y domain from real highs/lows so candle wicks are never clipped.
   const priceExtent = chartDataFormatted.reduce(
@@ -1209,9 +1225,9 @@ export default function StockChart({ symbol, currentPrice }: StockChartProps) {
 
   return (
     <>
-      <div className="space-y-4">
+      <div className={cn(fillHeight ? "h-full flex flex-col gap-2" : "space-y-4")}>
         {/* Chart Toolbar */}
-        <div className="bg-card border border-border rounded-lg p-2">
+        <div className={cn("bg-card border border-border rounded-lg p-2", fillHeight && "shrink-0")}>
           <div className="flex items-center justify-between gap-2 flex-wrap">
             {/* Timeframes */}
             <div className="flex items-center space-x-2">
@@ -1284,6 +1300,21 @@ export default function StockChart({ symbol, currentPrice }: StockChartProps) {
                 onClick={() => setShowVolume((v) => !v)}
               >
                 Volume
+              </Button>
+
+              {/* RSI Toggle */}
+              <Button
+                variant={showRsi ? "default" : "ghost"}
+                size="sm"
+                className={cn(
+                  "h-8 px-3 text-sm",
+                  showRsi
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+                onClick={() => setShowRsi((v) => !v)}
+              >
+                RSI
               </Button>
 
               {/* Toggle tooltip + current-price line (get out of the way while drawing) */}
@@ -1398,8 +1429,8 @@ export default function StockChart({ symbol, currentPrice }: StockChartProps) {
         </div>
 
         {/* Main Chart */}
-        <div className="chart-container relative">
-          <div className="h-80 relative" ref={plotWrapRef}>
+        <div className={cn("chart-container relative", fillHeight && "flex-1 flex flex-col min-h-0")}>
+          <div className={cn("relative", fillHeight ? "flex-1 min-h-0" : "h-80")} ref={plotWrapRef}>
             {isLoading && (
               <div className="w-full h-full bg-gradient-to-br from-muted to-background flex items-center justify-center">
                 <div className="text-center text-muted-foreground">
@@ -1489,7 +1520,7 @@ export default function StockChart({ symbol, currentPrice }: StockChartProps) {
 
           {/* Volume Indicator */}
           {showVolume && !isLoading && chartDataFormatted.length > 0 && (
-            <div className="h-24 border-t border-border">
+            <div className={cn("border-t border-border", fillHeight ? "h-28 shrink-0" : "h-24")}>
               <div className="flex items-center px-2 py-1 bg-muted">
                 <span className="text-xs font-medium text-foreground">Volume</span>
               </div>
@@ -1517,6 +1548,48 @@ export default function StockChart({ symbol, currentPrice }: StockChartProps) {
                     isAnimationActive={false}
                   />
                 </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* RSI Indicator (14) */}
+          {showRsi && !isLoading && chartDataFormatted.length > 0 && (
+            <div className={cn("border-t border-border", fillHeight ? "h-28 shrink-0" : "h-24")}>
+              <div className="flex items-center px-2 py-1 bg-muted">
+                <span className="text-xs font-medium text-foreground">RSI (14)</span>
+              </div>
+              <ResponsiveContainer width="100%" height="calc(100% - 28px)">
+                <LineChart data={rsiData} margin={{ top: 0, right: 12, bottom: 0, left: LEFT_MARGIN }}>
+                  <XAxis
+                    dataKey="timestamp"
+                    type="category"
+                    ticks={xTicks}
+                    tickFormatter={(ts: number) => formatAxisTick(ts, selectedTimeframe)}
+                    stroke="var(--muted-foreground)"
+                    fontSize={10}
+                    axisLine={false}
+                  />
+                  <YAxis
+                    domain={[0, 100]}
+                    ticks={[30, 70]}
+                    stroke="var(--muted-foreground)"
+                    fontSize={10}
+                    orientation="right"
+                    axisLine={false}
+                    width={40}
+                  />
+                  <ReferenceLine y={70} stroke="var(--muted-foreground)" strokeDasharray="3 3" />
+                  <ReferenceLine y={30} stroke="var(--muted-foreground)" strokeDasharray="3 3" />
+                  <Line
+                    type="monotone"
+                    dataKey="rsi"
+                    stroke="var(--primary)"
+                    strokeWidth={1.5}
+                    dot={false}
+                    isAnimationActive={false}
+                    connectNulls
+                  />
+                </LineChart>
               </ResponsiveContainer>
             </div>
           )}
