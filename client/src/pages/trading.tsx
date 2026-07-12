@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueries } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { Star, Briefcase, Bell, Maximize2, Minimize2 } from "lucide-react";
+import { Star, Briefcase, Bell, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
+import { ResizablePanelGroup, ResizablePanel } from "@/components/ui/resizable";
+import { PanelResizeHandle } from "react-resizable-panels";
 import StockChart from "@/components/stock-chart";
 import AlertModal from "@/components/alert-modal";
 import type { Watchlist, WatchlistItem, Portfolio, PortfolioHolding, StockQuote } from "@shared/schema";
@@ -33,7 +34,7 @@ export default function TradingPage() {
 
   const [order, setOrder] = useLocalStorage<string[]>("trading:tabOrder", []);
   const [activeKey, setActiveKey] = useLocalStorage<string | null>("trading:activeTab", null);
-  const [fullscreen, setFullscreen] = useLocalStorage<boolean>("trading:chartFullscreen", false);
+  const [listCollapsed, setListCollapsed] = useLocalStorage<boolean>("trading:listCollapsed", false);
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const dragKey = useRef<string | null>(null);
 
@@ -113,8 +114,13 @@ export default function TradingPage() {
           <div className="h-full flex items-center justify-center text-muted-foreground">
             Seleziona o crea una collezione.
           </div>
-        ) : fullscreen ? (
-          <ChartPanel symbol={selectedSymbol} fullscreen onToggleFullscreen={() => setFullscreen(false)} />
+        ) : listCollapsed ? (
+          <div className="h-full flex">
+            <CollapsedRail onExpand={() => setListCollapsed(false)} />
+            <div className="flex-1 min-w-0">
+              <ChartPanel symbol={selectedSymbol} />
+            </div>
+          </div>
         ) : (
           <ResizablePanelGroup
             key={active.kind}
@@ -122,7 +128,7 @@ export default function TradingPage() {
             autoSaveId={`trading-split-${active.kind}`}
             className="h-full"
           >
-            <ResizablePanel id="list" order={1} defaultSize={active.kind === "portfolio" ? 55 : 35} minSize={20}>
+            <ResizablePanel id="list" order={1} defaultSize={active.kind === "portfolio" ? 40 : 26} minSize={16}>
               {active.kind === "portfolio" ? (
                 <PortfolioList
                   key={active.key}
@@ -139,9 +145,9 @@ export default function TradingPage() {
                 />
               )}
             </ResizablePanel>
-            <ResizableHandle withHandle />
-            <ResizablePanel id="chart" order={2} defaultSize={active.kind === "portfolio" ? 45 : 65} minSize={30}>
-              <ChartPanel symbol={selectedSymbol} fullscreen={false} onToggleFullscreen={() => setFullscreen(true)} />
+            <DividerHandle onCollapse={() => setListCollapsed(true)} />
+            <ResizablePanel id="chart" order={2} defaultSize={active.kind === "portfolio" ? 60 : 74} minSize={30}>
+              <ChartPanel symbol={selectedSymbol} />
             </ResizablePanel>
           </ResizablePanelGroup>
         )}
@@ -237,17 +243,17 @@ function PortfolioList({
             const pnlToday = q ? q.change * h.quantity : undefined;
             return (
               <RowShell key={h.id} selected={h.symbol === selectedSymbol} onSelect={() => onSelect(h.symbol)}>
-                <td className="px-3 py-1.5">
+                <td className="px-3 py-1">
                   <div className="font-medium truncate max-w-[220px]">{h.name}</div>
                   <div className="text-xs text-muted-foreground">{h.symbol} · {h.exchange}</div>
                 </td>
-                <td className="text-right px-2 py-1.5">{num2(q?.currentPrice)}</td>
-                <td className={cn("text-right px-2 py-1.5", signClass(pnlToday))}>{num2(pnlToday)}</td>
-                <td className={cn("text-right px-2 py-1.5", signClass(q?.changePercent))}>{fmtPct(q?.changePercent)}</td>
-                <td className="text-right px-2 py-1.5">{num2(h.avgPrice)}</td>
-                <td className="text-right px-2 py-1.5">{num2(h.quantity)}</td>
-                <td className="text-right px-2 py-1.5">{num2(h.totalCost)}</td>
-                <td className="text-center px-2 py-1.5">
+                <td className="text-right px-2 py-1">{num2(q?.currentPrice)}</td>
+                <td className={cn("text-right px-2 py-1", signClass(pnlToday))}>{num2(pnlToday)}</td>
+                <td className={cn("text-right px-2 py-1", signClass(q?.changePercent))}>{fmtPct(q?.changePercent)}</td>
+                <td className="text-right px-2 py-1">{num2(h.avgPrice)}</td>
+                <td className="text-right px-2 py-1">{num2(h.quantity)}</td>
+                <td className="text-right px-2 py-1">{num2(h.totalCost)}</td>
+                <td className="text-center px-2 py-1">
                   <BellButton
                     onClick={(e) => {
                       e.stopPropagation();
@@ -356,15 +362,43 @@ function WatchlistList({
   );
 }
 
-function ChartPanel({
-  symbol,
-  fullscreen,
-  onToggleFullscreen,
-}: {
-  symbol: string | null;
-  fullscreen: boolean;
-  onToggleFullscreen: () => void;
-}) {
+// Lateral arrow control on the list/chart divider. Stays visible on the border
+// even when the list is hidden, so the user can always bring the list back.
+function DividerHandle({ onCollapse }: { onCollapse: () => void }) {
+  return (
+    <PanelResizeHandle className="relative w-1.5 bg-border transition-colors hover:bg-primary/40 data-[resize-handle-state=drag]:bg-primary">
+      <button
+        onPointerDown={(e) => e.stopPropagation()} // don't start a resize drag
+        onClick={(e) => {
+          e.stopPropagation();
+          onCollapse();
+        }}
+        title="Nascondi la lista (grafico a tutta larghezza)"
+        aria-label="Nascondi la lista"
+        className="absolute top-1/2 -left-2 z-20 flex h-9 w-4 -translate-y-1/2 items-center justify-center rounded-sm border border-border bg-card text-muted-foreground shadow hover:text-foreground"
+      >
+        <ChevronLeft className="w-3 h-3" />
+      </button>
+    </PanelResizeHandle>
+  );
+}
+
+function CollapsedRail({ onExpand }: { onExpand: () => void }) {
+  return (
+    <div className="relative w-1.5 shrink-0 bg-border">
+      <button
+        onClick={onExpand}
+        title="Mostra la lista"
+        aria-label="Mostra la lista"
+        className="absolute top-1/2 left-0 z-20 flex h-9 w-4 -translate-y-1/2 items-center justify-center rounded-sm border border-border bg-card text-muted-foreground shadow hover:text-foreground"
+      >
+        <ChevronRight className="w-3 h-3" />
+      </button>
+    </div>
+  );
+}
+
+function ChartPanel({ symbol }: { symbol: string | null }) {
   const { data: quote } = useQuery<StockQuote>({
     queryKey: [`/api/stocks/quote/${symbol}`],
     enabled: !!symbol,
@@ -372,25 +406,14 @@ function ChartPanel({
 
   return (
     <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-card">
-        <div className="flex items-baseline gap-3 min-w-0">
-          <span className="font-semibold truncate">{symbol ?? "—"}</span>
-          {quote && (
-            <>
-              <span className="text-sm">{num2(quote.currentPrice)}</span>
-              <span className={cn("text-sm", signClass(quote.changePercent))}>{fmtPct(quote.changePercent)}</span>
-            </>
-          )}
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 text-muted-foreground hover:text-foreground"
-          onClick={onToggleFullscreen}
-          aria-label={fullscreen ? "Ripristina layout" : "Grafico a schermo intero"}
-        >
-          {fullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-        </Button>
+      <div className="flex items-baseline gap-3 px-3 py-2 border-b border-border bg-card min-w-0">
+        <span className="font-semibold truncate">{symbol ?? "—"}</span>
+        {quote && (
+          <>
+            <span className="text-sm">{num2(quote.currentPrice)}</span>
+            <span className={cn("text-sm", signClass(quote.changePercent))}>{fmtPct(quote.changePercent)}</span>
+          </>
+        )}
       </div>
       <div className="flex-1 overflow-auto p-3">
         {symbol ? (
