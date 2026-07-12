@@ -461,17 +461,22 @@ Dettaglio in `Docs/CHANGELOG_DECISIONS.md`.
   il `.env` punta a Postgres locale non attivo) con dati demo seed (watchlist Tech Stocks + portafoglio
   "Demo Multi" multivaluta). Fermare il server con `TaskStop` (niente `Stop-Process`).
 
-## PROSSIMO STEP — Vista Trading, evoluzione grafico (spec utente 2026-07-12, DA FARE)
-1. **Linguetta a freccia sul divisore** al posto del fullscreen: `←` nasconde la lista (grafico a tutta
-   larghezza), `→` ripristina la larghezza precedente; comando visibile sul bordo **anche a lista nascosta**.
-2. **Lista titoli minima**; grafico più largo già in vista normale.
-3. **Altezza grafico dinamica**: senza Volume/RSI il grafico occupa tutta l'altezza; con Volume e/o RSI
-   attivi l'altezza si distribuisce tra grafico principale, Volume e RSI.
-4. **Pannelli Volume e RSI attivabili/disattivabili**.
-5. **Interazioni desktop**: rotella = intervallo orizzontale; drag verticale sull'asse prezzi destro =
-   scala verticale; candele/linee/indicatori si riadattano.
-6. **Interazioni touch**: pinch = zoom; drag verticale un dito sull'asse prezzi = scala verticale.
-   Non toccare il resto del layout mobile.
+## Vista Trading — evoluzione grafico (spec utente 2026-07-12): punti 1-4 FATTI, 5-6 RIMANENTI
+Implementati in sessione autonoma 2026-07-12 (commit locali `1a30412`, incremento 2 successivo; NON pushati):
+1. ✅ **Freccia sul divisore** (sostituisce il fullscreen): `←` nasconde la lista (grafico a tutta larghezza),
+   `→` ripristina; comando visibile sul bordo anche a lista nascosta. Stato `trading:listCollapsed`.
+2. ✅ **Lista compatta** + grafico più largo di default (list defaultSize 40/26%).
+3. ✅ **Altezza grafico dinamica** via prop `StockChart.fillHeight` (default off = stock-detail invariato):
+   senza pannelli il main riempie l'altezza; con Volume/RSI l'altezza si distribuisce (pannelli fissi, main flex).
+4. ✅ **Pannelli Volume e RSI attivabili** (toggle in toolbar); RSI(14) Wilder in `client/src/lib/indicators.ts`.
+
+**RIMANENTI (rinviati di proposito — rischio sul sistema disegni/scala, da progettare con cura):**
+5. **Interazioni desktop**: rotella = intervallo orizzontale (richiede windowing dati → tocca la mappatura
+   tempo↔indice dei disegni); drag verticale sull'asse prezzi destro = scala verticale (override domain Y,
+   più sicuro ma va coordinato con gli handler pointer del disegno).
+6. **Interazioni touch**: pinch = zoom; drag verticale un dito sull'asse prezzi = scala. Non toccare il resto
+   del layout mobile. NB: gli handler `onPointerDown/Move` del disegno in `stock-chart.tsx` vanno coordinati
+   per non entrare in conflitto.
 
 ## Portafogli virtuali multipli — storico decisioni (2026-07-12, IMPLEMENTATO)
 - Feature nuova: portafogli con posizioni (quantità, prezzo medio spese incluse, costo totale),

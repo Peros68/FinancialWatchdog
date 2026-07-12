@@ -5,7 +5,7 @@
 
 **Ultimo aggiornamento:** 2026-07-12
 **Stato qualità (ultima verifica, 2026-07-12):** `npm run check` 0 · `npm run lint` 0 ·
-`npm test` **112/112** · `npm run build` OK.
+`npm test` **116/116** · `npm run build` OK.
 
 **PORTAFOGLI VIRTUALI + VISTA TRADING (2026-07-12):** aggiunti portafogli virtuali multipli
 (tabelle `portfolios`/`portfolio_holdings`, `numeric` per denaro via customType, media pesata
@@ -85,19 +85,24 @@ npm run build      # build client + bundle server
 - **Vista Trading desktop (`/trading`)** — **FATTO 2026-07-12, committata in locale, NON pushata.**
   Desktop-only (mobile invariato); tab Watchlist/Portafogli trascinabili con ordine persistente
   (`localStorage`); lista+grafico ridimensionabile (`react-resizable-panels`, larghezza memorizzata
-  per tipo); fullscreen grafico. **Prossimo step (spec utente 2026-07-12, da implementare):**
-  1. **Linguetta a freccia sul divisore** al posto del fullscreen: `←` nasconde del tutto la lista
-     (grafico a tutta larghezza), `→` ripristina la lista alla larghezza precedente; il comando
-     resta visibile sul bordo di separazione **anche a lista nascosta**.
-  2. **Lista titoli ridotta al minimo indispensabile**; grafico più largo già nella vista normale.
-  3. **Altezza grafico dinamica**: senza Volume/RSI il grafico principale occupa tutta l'altezza;
-     con Volume e/o RSI attivi l'altezza si distribuisce tra grafico principale, Volume e RSI.
-  4. **Pannelli Volume e RSI attivabili/disattivabili** dall'utente.
-  5. **Interazioni desktop grafico**: rotella mouse = intervallo orizzontale visibile (un verso più
-     ampio, l'altro più dettaglio); drag verticale sull'**asse prezzi destro** = scala verticale
-     (su = amplia, giù = restringe); candele/linee/indicatori si riadattano alla nuova scala.
-  6. **Interazioni touch**: pinch a due dita = zoom; drag verticale con un dito sull'area asse prezzi
-     = scala verticale. **Non modificare** il resto del layout mobile oltre a queste interazioni.
+  per tipo). **Evoluzione grafico (spec utente 2026-07-12): punti 1-4 FATTI (2026-07-12, sessione
+  autonoma, commit locali NON pushati), 5-6 RIMANENTI.**
+  1. ✅ **Freccia sul divisore** (sostituisce il fullscreen): `←` nasconde la lista (grafico a tutta
+     larghezza), `→` ripristina; comando visibile sul bordo **anche a lista nascosta** (`trading:listCollapsed`).
+  2. ✅ **Lista compatta**, grafico più largo già in vista normale (list default 40%/26%).
+  3. ✅ **Altezza grafico dinamica** via prop `StockChart.fillHeight` (default off = stock-detail
+     invariato): senza pannelli il main riempie l'altezza; con Volume/RSI si distribuisce.
+  4. ✅ **Pannelli Volume e RSI attivabili** (toggle toolbar); RSI(14) Wilder in
+     `client/src/lib/indicators.ts` (puro, testato `tests/indicators.test.ts`).
+  5. ⏳ **Interazioni desktop**: rotella = intervallo orizzontale visibile (richiede windowing dati →
+     impatta la mappatura tempo↔indice dei disegni); drag verticale sull'**asse prezzi destro** =
+     scala verticale (override domain Y, più sicuro). **Rinviato**: da coordinare con gli handler
+     pointer del disegno.
+  6. ⏳ **Interazioni touch**: pinch = zoom; drag verticale un dito sull'asse prezzi = scala. **Non
+     modificare** il resto del layout mobile. **Rinviato** (stesso rischio disegni).
+  **Rationale del rinvio 5-6:** le interazioni si intrecciano col sistema scala/indici e con gli
+  handler `onPointerDown/Move` del disegno (parte fragile e stratificata); da progettare con cura per
+  evitare regressioni sugli strumenti di disegno.
 - ~~**PostgreSQL (D1/D4)**~~ — **FATTO 2026-07-05** (attivato e verificato, vedi §6).
 - **Monitoraggio alert fase 2** — scheduler + `triggeredAt` **FATTI (2026-07-06)**; resta la
   logica di notifica (fuori scope). **Modello C DECISO e IMPLEMENTATO (2026-07-06)**: tutti i

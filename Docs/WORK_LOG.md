@@ -2,6 +2,29 @@
 
 Registro cronologico degli incrementi. Voce più recente in alto.
 
+## 2026-07-12 (sessione autonoma) — Trading, evoluzione grafico: punti 1-4 (5-6 rinviati)
+
+**Contesto:** l'utente ha chiesto di lavorare in autonomia sui prossimi step della vista Trading
+(spec 6 punti). Implementati e verificati i punti 1-4; commit **locali, NON pushati**; server locale
+lasciato attivo. Deploy resta un gate utente.
+
+**Fatto (commit locali `1a30412` + incremento Volume/RSI):**
+1. **Freccia sul divisore** al posto del fullscreen (`←` nasconde la lista → grafico a tutta larghezza,
+   `→` ripristina; comando visibile sul bordo anche a lista nascosta; stato `trading:listCollapsed`).
+2. **Lista compatta** + grafico più largo di default (`ResizablePanel` list defaultSize 40%/26%).
+3. **Altezza grafico dinamica** via nuova prop `StockChart.fillHeight` (**default off → `stock-detail`
+   invariato**): senza pannelli il main riempie l'altezza; con Volume/RSI l'altezza si distribuisce.
+4. **Pannelli Volume e RSI attivabili** (toggle in toolbar). RSI(14) Wilder in
+   `client/src/lib/indicators.ts` (puro) + `tests/indicators.test.ts` (4).
+
+**Rinviato di proposito (punti 5-6, interazioni grafico):** rotella = intervallo orizzontale, drag
+verticale asse prezzi = scala, pinch touch. Motivo: si intrecciano con il sistema scala/indici e con
+gli handler `onPointerDown/Move` del **disegno** (parte fragile); lo zoom orizzontale richiede windowing
+dati che romperebbe la mappatura tempo↔indice dei disegni. Da progettare con cura per non regredire.
+Rischiare una regressione sul disegno mentre l'utente è assente non è prudente. Dettaglio in HANDOVER §5.
+
+**Qualità:** `npm run check` 0 · `npm run lint` 0 · `npm test` **116/116** · `npm run build` OK.
+
 ## 2026-07-12 — Portafogli virtuali multipli + Modifica/guardia valute + Vista Trading desktop
 
 **1) Portafogli virtuali (schema DB + API + UI) — LIVE su Supabase/Render.**
